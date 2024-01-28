@@ -1,0 +1,4 @@
+*.1D
+*.nii.gz
+abide/
+venv/
