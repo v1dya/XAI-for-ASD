@@ -1,9 +1,11 @@
+import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torch.utils.data import Subset
+from torch.utils.data import TensorDataset
 import numpy as np
 import os
 import pdb
@@ -23,7 +25,7 @@ def get_data_from_abide():
     file_name = i.split(',')[6]
     diagnosis = i.split(',')[7]
 
-    labels_dict[file_name] = int(diagnosis) # Save labels alongisde their filenames
+    labels_dict[file_name] = float(diagnosis) # Save labels alongisde their filenames
 
   data = []
   labels = []
@@ -62,7 +64,7 @@ def get_feature_vecs(data):
 def get_top_features_from_SVM_RFE(X, Y, N):
   svm = SVC(kernel="linear")
 
-  rfe = RFE(estimator=svm, n_features_to_select=N, step=20, verbose=1)
+  rfe = RFE(estimator=svm, n_features_to_select=N, step=1, verbose=1)
 
   pdb.set_trace()
   rfe.fit(X, Y)
@@ -89,9 +91,18 @@ class SparseAutoencoder(nn.Module):
     self.decoder = nn.Linear(encoded_output_size, input_size)
   
   def forward(self, x):
-    encoded = self.encoder(x)
+    encoded = torch.relu(self.encoder(x))
     decoded = self.decoder(encoded)
     return encoded, decoded
+  
+class SoftmaxClassifier(nn.Module):
+  def __init__(self, input_size, num_classes):
+    super(SoftmaxClassifier, self).__init__()
+    self.linear = nn.Linear(input_size, num_classes)
+
+  def forward(self, x):
+    out = self.linear(x)
+    return out
   
 class CustomDataset(Dataset):
   def __init__(self, data, labels):
@@ -100,11 +111,27 @@ class CustomDataset(Dataset):
     self.data = data
 
   def __len__(self):
-    return len(data)
+    return len(self.data)
   
   def __getitem__(self, idx):
     return self.data[idx], self.labels[idx]
 
+
+def encode_data(dataloader, sae1, sae2, device):
+  encoded_data = []
+  labels = []
+
+  for batch in dataloader:
+    data, label = batch
+    data = data.float().to(device)
+
+    with torch.no_grad():
+      encoded_features, _ = sae1(data)
+      encoded_features, _ = sae2(encoded_features)
+      encoded_data.append(encoded_features)
+      labels.append(label)
+
+  return encoded_data, labels
   
 
 
@@ -117,26 +144,26 @@ if __name__ == "__main__":
   device = torch.device("cuda:0" if use_cuda else "cpu")
   torch.backends.cudnn.benchmark = True
 
+  # torch.manual_seed(0)
+  # np.random.seed(0)
+  # random.seed(0)
+  # if use_cuda:
+  #     torch.cuda.manual_seed_all(0)
+
   data, labels = get_data_from_abide()
   labels = np.array(labels)
-
-  # feature_vecs = get_feature_vecs(data)
-
-  # top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
   
-  top_features = np.loadtxt('top_features_116_step20.csv', delimiter=',')  
+  #Convert labels from 1, 2 to 0, 1 for PyTorch compatibility
+  labels = labels - 1
+
+
+  feature_vecs = get_feature_vecs(data)
+
+  top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
+  #np.savetxt("top_features_116_step20.csv", top_features, delimiter=",")
   
-  batch_size = 64
-
-  pdb.set_trace()
+  #top_features = np.loadtxt('top_features_116_step20.csv', delimiter=',')
   
-
-  SAE1 = SparseAutoencoder(1000, 200)
-  SAE1_epochs = 20
-
-  SAE2 = SparseAutoencoder(200, 100)
-  SAE2_epochs = 20
-
   train_idx, test_idx = train_test_split(list(range(len(top_features))), test_size=0.2)
 
   dataset = {}
@@ -148,31 +175,142 @@ if __name__ == "__main__":
   dataset['test'] = Subset(top_features, test_idx)
   label['test'] = Subset(labels, test_idx)
 
-  train_set = CustomDataset(dataset['train'].dataset, label['train'].dataset)
-  test_set = CustomDataset(dataset['test'].dataset, label['test'].dataset)
-  pdb.set_trace()
+  train_set = CustomDataset(dataset['train'], label['train'])
+  test_set = CustomDataset(dataset['test'], label['test'])
+
   params = {
-    'batch_size': 64,
+    'batch_size': 32,
     'shuffle': True,
-    'num_workers': 1
+    'num_workers': 0
   }
 
   train_dataloader = DataLoader(train_set, **params)
   test_dataloader = DataLoader(test_set, **params)
 
-  criterion = nn.BCELoss()  # Binary Cross Entropy Loss
+  SAE1 = SparseAutoencoder(1000, 200).to(device) 
+  SAE1_epochs = 200
+  optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
+
+  SAE2 = SparseAutoencoder(200, 100).to(device) 
+  SAE2_epochs = 200
+  optimizer_sae2 = optim.Adam( SAE2.parameters(), lr=0.001, weight_decay=1e-4 )
+
+  classifier = SoftmaxClassifier(100, 2).to(device) 
+  classifier_epochs = 100
+  optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
+
+  sae_criterion = nn.MSELoss()
+  classifier_criterion = nn.CrossEntropyLoss()
+
   
 
-  # Loop over epochs
+  #Train SAE 1
   for epoch in range(SAE1_epochs):
-      # Training
-      for batch in train_dataloader:
-          # Transfer to GPU
-          pdb.set_trace()
-          X, y = batch
+    for batch in train_dataloader:
+      data, labels = batch
+      data = data.float().to(device) 
 
-          # Model computations
-          print(len(X))
-          print("label",len(y))
+      optimizer_sae1.zero_grad()
+
+      encoded_features, decoded_featues = SAE1(data)
+
+      loss = sae_criterion(decoded_featues, data)
+      loss.backward()
+      optimizer_sae1.step()
+    print(f"SAE 1: Epoch {epoch}, loss {loss.item()}")
+  
+  print("======================================\nTrained SAE 1\n======================================")
+  
+  encoded_features_from_sae1 = []
+  labels_from_sae1 = []
+
+  for batch in train_dataloader:
+    data, labels = batch
+    data = data.float().to(device) 
+
+    with torch.no_grad():
+      encoded_features, _ = SAE1(data)
+      encoded_features_from_sae1.append(encoded_features)
+      labels_from_sae1.append(labels)
+
+  encoded_dataset_tensor = torch.cat(encoded_features_from_sae1, dim=0)
+  labels_tensor = torch.cat(labels_from_sae1, dim=0)
+
+  encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
+
+  encoded_dataset_loader = DataLoader(encoded_dataset, **params)
+
+  # Train SAE 2
+  for epoch in range(SAE2_epochs):
+    for batch in encoded_dataset_loader:
+      data, labels = batch
+      data = data.float().to(device) 
+
+      optimizer_sae2.zero_grad()
+
+      encoded_features, decoded_featues = SAE2(data)
+
+      loss = sae_criterion(decoded_featues, data)
+      loss.backward()
+      optimizer_sae2.step()
+    print(f"SAE 2: Epoch {epoch}, loss {loss.item()}")
+
+  print("======================================\nTrained SAE 2\n======================================")
+  
+  encoded_features_from_sae2 = []
+  labels_from_sae2 = []
+  for batch in encoded_dataset_loader:
+    data, labels = batch
+    data = data.float().to(device) 
+
+    with torch.no_grad():
+      encoded_features, _ = SAE2(data)
+      encoded_features_from_sae2.append(encoded_features)
+      labels_from_sae2.append(labels)
+
+  encoded_dataset_tensor = torch.cat(encoded_features_from_sae2, dim=0)
+  labels_tensor = torch.cat(labels_from_sae2, dim=0)
+
+  encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
+
+  encoded_dataset_loader = DataLoader(encoded_dataset, **params)
+
+  # Train classifier
+  for epoch in range(classifier_epochs):
+    for batch in encoded_dataset_loader:
+      data, labels = batch
+      data = data.float().to(device) 
+      labels = labels.long().to(device) 
+
+      optimizer_classifier.zero_grad()
+
+      classifier_output = classifier(data)
+
+      loss = classifier_criterion(classifier_output, labels)
+      loss.backward()
+      optimizer_classifier.step()
+    print(f"Classifier: Epoch {epoch} loss: {loss.item()}")
+
+  print("======================================\nTrained classifier\n======================================")
+
+  print("Infer data from trained SAE")
+  encoded_test_data, test_labels = encode_data(test_dataloader, SAE1, SAE2, device)
+
+  classifier.eval()
+
+  total = 0
+  correct = 0
 
 
+  for i in range(len(encoded_test_data)):
+    data = encoded_test_data[i].float().to(device) 
+    labels = test_labels[i].long().to(device) 
+
+    outputs = classifier(data)
+
+    _, predicted = torch.max(outputs.data, 1)
+    total += labels.size(0)
+    correct += (predicted == labels).sum().item()
+
+  accuracy = 100 * correct / total
+  print(f'Accuracy of the model on the test dataset: {accuracy:.2f}%')
