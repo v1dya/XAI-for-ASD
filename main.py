@@ -66,9 +66,9 @@ def get_top_features_from_SVM_RFE(X, Y, N):
 
   rfe = RFE(estimator=svm, n_features_to_select=N, step=1, verbose=1)
 
-  pdb.set_trace()
+
   rfe.fit(X, Y)
-  pdb.set_trace()
+
   top_features = rfe.transform(X)
 
   return top_features
