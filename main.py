@@ -157,12 +157,12 @@ if __name__ == "__main__":
   labels = labels - 1
 
 
-  feature_vecs = get_feature_vecs(data)
+  #feature_vecs = get_feature_vecs(data)
 
-  top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
+  #top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
   #np.savetxt("top_features_116_step20.csv", top_features, delimiter=",")
   
-  #top_features = np.loadtxt('top_features_116_step20.csv', delimiter=',')
+  top_features = np.loadtxt('top_features_116_step20.csv', delimiter=',')
   
   train_idx, test_idx = train_test_split(list(range(len(top_features))), test_size=0.2)
 
@@ -179,7 +179,7 @@ if __name__ == "__main__":
   test_set = CustomDataset(dataset['test'], label['test'])
 
   params = {
-    'batch_size': 32,
+    'batch_size': 128,
     'shuffle': True,
     'num_workers': 0
   }
@@ -187,16 +187,16 @@ if __name__ == "__main__":
   train_dataloader = DataLoader(train_set, **params)
   test_dataloader = DataLoader(test_set, **params)
 
-  SAE1 = SparseAutoencoder(1000, 200).to(device) 
+  SAE1 = SparseAutoencoder(1000, 500).to(device) 
   SAE1_epochs = 200
   optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
 
-  SAE2 = SparseAutoencoder(200, 100).to(device) 
+  SAE2 = SparseAutoencoder(500, 200).to(device) 
   SAE2_epochs = 200
   optimizer_sae2 = optim.Adam( SAE2.parameters(), lr=0.001, weight_decay=1e-4 )
 
-  classifier = SoftmaxClassifier(100, 2).to(device) 
-  classifier_epochs = 100
+  classifier = SoftmaxClassifier(200, 2).to(device) 
+  classifier_epochs = 1000
   optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
 
   sae_criterion = nn.MSELoss()
