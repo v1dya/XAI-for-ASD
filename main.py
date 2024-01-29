@@ -66,9 +66,8 @@ def get_top_features_from_SVM_RFE(X, Y, N):
 
   rfe = RFE(estimator=svm, n_features_to_select=N, step=1, verbose=1)
 
-  pdb.set_trace()
   rfe.fit(X, Y)
-  pdb.set_trace()
+
   top_features = rfe.transform(X)
 
   return top_features
@@ -133,7 +132,10 @@ def encode_data(dataloader, sae1, sae2, device):
 
   return encoded_data, labels
   
-
+def kl_divergence(rho, rho_hat, epsilon=1e-10):
+  rho_hat = torch.clamp(rho_hat, min=epsilon)
+  rho = torch.tensor([rho] * len(rho_hat)).to(rho_hat.device)
+  return torch.sum(rho * torch.log(rho / rho_hat) + (1 - rho) * torch.log((1 - rho) / (1 - rho_hat)))
 
 if __name__ == "__main__":
   print("Hi this is main")
@@ -157,12 +159,13 @@ if __name__ == "__main__":
   labels = labels - 1
 
 
-  feature_vecs = get_feature_vecs(data)
+  #feature_vecs = get_feature_vecs(data)
 
-  top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
+  #top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
+  # pdb.set_trace()
   #np.savetxt("top_features_116_step20.csv", top_features, delimiter=",")
-  
-  #top_features = np.loadtxt('top_features_116_step20.csv', delimiter=',')
+
+  top_features = np.loadtxt('top_features_116_step20.csv', delimiter=',')
   
   train_idx, test_idx = train_test_split(list(range(len(top_features))), test_size=0.2)
 
@@ -186,6 +189,10 @@ if __name__ == "__main__":
 
   train_dataloader = DataLoader(train_set, **params)
   test_dataloader = DataLoader(test_set, **params)
+
+  # Set the parameters
+  rho = 0.08  # Sparsity parameter
+  beta = 2    # Weight of sparsity penalty
 
   SAE1 = SparseAutoencoder(1000, 200).to(device) 
   SAE1_epochs = 200
@@ -212,9 +219,17 @@ if __name__ == "__main__":
 
       optimizer_sae1.zero_grad()
 
-      encoded_features, decoded_featues = SAE1(data)
+      encoded_features, decoded_features = SAE1(data)
 
-      loss = sae_criterion(decoded_featues, data)
+      reconstruction_loss = sae_criterion(decoded_features, data)
+
+      # Sparsity loss
+      rho_hat = torch.mean(decoded_features, dim=1)
+      sparsity_loss = kl_divergence(rho, rho_hat)
+      
+      # Total loss
+      loss = reconstruction_loss + beta * sparsity_loss
+
       loss.backward()
       optimizer_sae1.step()
     print(f"SAE 1: Epoch {epoch}, loss {loss.item()}")
@@ -248,9 +263,16 @@ if __name__ == "__main__":
 
       optimizer_sae2.zero_grad()
 
-      encoded_features, decoded_featues = SAE2(data)
+      encoded_features, decoded_features = SAE2(data)
 
-      loss = sae_criterion(decoded_featues, data)
+      reconstruction_loss = sae_criterion(decoded_features, data)
+
+      # Sparsity loss
+      rho_hat = torch.mean(decoded_features, dim=1)
+      sparsity_loss = kl_divergence(rho, rho_hat)
+      
+      # Total loss
+      loss = reconstruction_loss + beta * sparsity_loss
       loss.backward()
       optimizer_sae2.step()
     print(f"SAE 2: Epoch {epoch}, loss {loss.item()}")
