@@ -2,6 +2,7 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torch.utils.data import Subset
@@ -144,11 +145,11 @@ if __name__ == "__main__":
   device = torch.device("cuda:0" if use_cuda else "cpu")
   torch.backends.cudnn.benchmark = True
 
-  # torch.manual_seed(0)
-  # np.random.seed(0)
-  # random.seed(0)
-  # if use_cuda:
-  #     torch.cuda.manual_seed_all(0)
+  torch.manual_seed(0)
+  np.random.seed(0)
+  random.seed(0)
+  if use_cuda:
+      torch.cuda.manual_seed_all(0)
 
   data, labels = get_data_from_abide()
   labels = np.array(labels)
@@ -184,8 +185,13 @@ if __name__ == "__main__":
     'num_workers': 0
   }
 
+  test_params = {
+    'batch_size': 128,
+    'num_workers': 0
+  }
+
   train_dataloader = DataLoader(train_set, **params)
-  test_dataloader = DataLoader(test_set, **params)
+  test_dataloader = DataLoader(test_set, **test_params)
 
   SAE1 = SparseAutoencoder(1000, 500).to(device) 
   SAE1_epochs = 200
@@ -203,7 +209,7 @@ if __name__ == "__main__":
   classifier_criterion = nn.CrossEntropyLoss()
 
   
-
+  loss_sae1 =[]
   #Train SAE 1
   for epoch in range(SAE1_epochs):
     for batch in train_dataloader:
@@ -217,6 +223,7 @@ if __name__ == "__main__":
       loss = sae_criterion(decoded_featues, data)
       loss.backward()
       optimizer_sae1.step()
+    loss_sae1.append(loss.item())
     print(f"SAE 1: Epoch {epoch}, loss {loss.item()}")
   
   print("======================================\nTrained SAE 1\n======================================")
@@ -240,6 +247,7 @@ if __name__ == "__main__":
 
   encoded_dataset_loader = DataLoader(encoded_dataset, **params)
 
+  loss_sae2 = []
   # Train SAE 2
   for epoch in range(SAE2_epochs):
     for batch in encoded_dataset_loader:
@@ -253,6 +261,7 @@ if __name__ == "__main__":
       loss = sae_criterion(decoded_featues, data)
       loss.backward()
       optimizer_sae2.step()
+    loss_sae2.append(loss.item())
     print(f"SAE 2: Epoch {epoch}, loss {loss.item()}")
 
   print("======================================\nTrained SAE 2\n======================================")
@@ -275,6 +284,7 @@ if __name__ == "__main__":
 
   encoded_dataset_loader = DataLoader(encoded_dataset, **params)
 
+  loss_classifier = []
   # Train classifier
   for epoch in range(classifier_epochs):
     for batch in encoded_dataset_loader:
@@ -289,6 +299,7 @@ if __name__ == "__main__":
       loss = classifier_criterion(classifier_output, labels)
       loss.backward()
       optimizer_classifier.step()
+    loss_classifier.append(loss.item())
     print(f"Classifier: Epoch {epoch} loss: {loss.item()}")
 
   print("======================================\nTrained classifier\n======================================")
@@ -314,3 +325,18 @@ if __name__ == "__main__":
 
   accuracy = 100 * correct / total
   print(f'Accuracy of the model on the test dataset: {accuracy:.2f}%')
+
+  
+  x = range(SAE1_epochs)
+  plt.plot(x, loss_sae1)
+  plt.show()
+
+  pdb.set_trace()
+  
+  x = range(SAE2_epochs)
+  plt.plot(x, loss_sae2)
+  plt.show()
+
+  x = range(classifier_epochs)
+  plt.plot(x, loss_classifier)
+  plt.show()
