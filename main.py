@@ -196,116 +196,151 @@ if __name__ == "__main__":
   train_dataloader = DataLoader(train_set, **params)
   test_dataloader = DataLoader(test_set, **test_params)
 
-  SAE1 = SparseAutoencoder(1000, 500).to(device) 
-  SAE1_epochs = 200
-  optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
-
-  SAE2 = SparseAutoencoder(500, 200).to(device) 
-  SAE2_epochs = 200
-  optimizer_sae2 = optim.Adam( SAE2.parameters(), lr=0.001, weight_decay=1e-4 )
-
+  SAE1 = SparseAutoencoder(1000, 500).to(device)
+  SAE2 = SparseAutoencoder(500, 200).to(device)
   classifier = SoftmaxClassifier(200, 2).to(device) 
-  classifier_epochs = 1000
-  optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
 
-  sae_criterion = nn.MSELoss()
-  classifier_criterion = nn.CrossEntropyLoss()
+  train_model = False
+  if (train_model):
+    SAE1_epochs = 200
+    optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
+    
+    SAE2_epochs = 200
+    optimizer_sae2 = optim.Adam( SAE2.parameters(), lr=0.001, weight_decay=1e-4 )
 
-  
-  loss_sae1 =[]
-  #Train SAE 1
-  for epoch in range(SAE1_epochs):
+    classifier_epochs = 1000
+    optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
+
+    sae_criterion = nn.MSELoss()
+    classifier_criterion = nn.CrossEntropyLoss()
+
+    
+    loss_sae1 =[]
+    #Train SAE 1
+    for epoch in range(SAE1_epochs):
+      for batch in train_dataloader:
+        data, labels = batch
+        data = data.float().to(device) 
+
+        optimizer_sae1.zero_grad()
+
+        encoded_features, decoded_featues = SAE1(data)
+
+        loss = sae_criterion(decoded_featues, data)
+        loss.backward()
+        optimizer_sae1.step()
+      loss_sae1.append(loss.item())
+      print(f"SAE 1: Epoch {epoch}, loss {loss.item()}")
+    
+    print("======================================\nTrained SAE 1\n======================================")
+    
+    encoded_features_from_sae1 = []
+    labels_from_sae1 = []
+
     for batch in train_dataloader:
       data, labels = batch
       data = data.float().to(device) 
 
-      optimizer_sae1.zero_grad()
+      with torch.no_grad():
+        encoded_features, _ = SAE1(data)
+        encoded_features_from_sae1.append(encoded_features)
+        labels_from_sae1.append(labels)
 
-      encoded_features, decoded_featues = SAE1(data)
+    encoded_dataset_tensor = torch.cat(encoded_features_from_sae1, dim=0)
+    labels_tensor = torch.cat(labels_from_sae1, dim=0)
 
-      loss = sae_criterion(decoded_featues, data)
-      loss.backward()
-      optimizer_sae1.step()
-    loss_sae1.append(loss.item())
-    print(f"SAE 1: Epoch {epoch}, loss {loss.item()}")
-  
-  print("======================================\nTrained SAE 1\n======================================")
-  
-  encoded_features_from_sae1 = []
-  labels_from_sae1 = []
+    encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
 
-  for batch in train_dataloader:
-    data, labels = batch
-    data = data.float().to(device) 
+    encoded_dataset_loader = DataLoader(encoded_dataset, **params)
 
-    with torch.no_grad():
-      encoded_features, _ = SAE1(data)
-      encoded_features_from_sae1.append(encoded_features)
-      labels_from_sae1.append(labels)
+    loss_sae2 = []
+    # Train SAE 2
+    for epoch in range(SAE2_epochs):
+      for batch in encoded_dataset_loader:
+        data, labels = batch
+        data = data.float().to(device) 
 
-  encoded_dataset_tensor = torch.cat(encoded_features_from_sae1, dim=0)
-  labels_tensor = torch.cat(labels_from_sae1, dim=0)
+        optimizer_sae2.zero_grad()
 
-  encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
+        encoded_features, decoded_featues = SAE2(data)
 
-  encoded_dataset_loader = DataLoader(encoded_dataset, **params)
+        loss = sae_criterion(decoded_featues, data)
+        loss.backward()
+        optimizer_sae2.step()
+      loss_sae2.append(loss.item())
+      print(f"SAE 2: Epoch {epoch}, loss {loss.item()}")
 
-  loss_sae2 = []
-  # Train SAE 2
-  for epoch in range(SAE2_epochs):
+    print("======================================\nTrained SAE 2\n======================================")
+    
+    encoded_features_from_sae2 = []
+    labels_from_sae2 = []
     for batch in encoded_dataset_loader:
       data, labels = batch
       data = data.float().to(device) 
 
-      optimizer_sae2.zero_grad()
+      with torch.no_grad():
+        encoded_features, _ = SAE2(data)
+        encoded_features_from_sae2.append(encoded_features)
+        labels_from_sae2.append(labels)
 
-      encoded_features, decoded_featues = SAE2(data)
+    encoded_dataset_tensor = torch.cat(encoded_features_from_sae2, dim=0)
+    labels_tensor = torch.cat(labels_from_sae2, dim=0)
 
-      loss = sae_criterion(decoded_featues, data)
-      loss.backward()
-      optimizer_sae2.step()
-    loss_sae2.append(loss.item())
-    print(f"SAE 2: Epoch {epoch}, loss {loss.item()}")
+    encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
 
-  print("======================================\nTrained SAE 2\n======================================")
-  
-  encoded_features_from_sae2 = []
-  labels_from_sae2 = []
-  for batch in encoded_dataset_loader:
-    data, labels = batch
-    data = data.float().to(device) 
+    encoded_dataset_loader = DataLoader(encoded_dataset, **params)
 
-    with torch.no_grad():
-      encoded_features, _ = SAE2(data)
-      encoded_features_from_sae2.append(encoded_features)
-      labels_from_sae2.append(labels)
+    loss_classifier = []
+    # Train classifier
+    for epoch in range(classifier_epochs):
+      for batch in encoded_dataset_loader:
+        data, labels = batch
+        data = data.float().to(device) 
+        labels = labels.long().to(device) 
 
-  encoded_dataset_tensor = torch.cat(encoded_features_from_sae2, dim=0)
-  labels_tensor = torch.cat(labels_from_sae2, dim=0)
+        optimizer_classifier.zero_grad()
 
-  encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
+        classifier_output = classifier(data)
 
-  encoded_dataset_loader = DataLoader(encoded_dataset, **params)
+        loss = classifier_criterion(classifier_output, labels)
+        loss.backward()
+        optimizer_classifier.step()
+      loss_classifier.append(loss.item())
+      print(f"Classifier: Epoch {epoch} loss: {loss.item()}")
 
-  loss_classifier = []
-  # Train classifier
-  for epoch in range(classifier_epochs):
-    for batch in encoded_dataset_loader:
-      data, labels = batch
-      data = data.float().to(device) 
-      labels = labels.long().to(device) 
+    print("======================================\nTrained classifier\n======================================")
 
-      optimizer_classifier.zero_grad()
+    dig, axs = plt.subplots(1, 3, figsize=(15,5))
+    
+    axs[0].plot(range(SAE1_epochs), loss_sae1)
+    axs[0].set_title('SAE1 Loss')
+    axs[0].set_xlabel('Epoch')
+    axs[0].set_ylabel('Loss')
 
-      classifier_output = classifier(data)
+    # Plot for SAE2
+    axs[1].plot(range(SAE2_epochs), loss_sae2)
+    axs[1].set_title('SAE2 Loss')
+    axs[1].set_xlabel('Epoch')
+    # axs[1].set_ylabel('Loss')  # Optional, as it shares the y-axis with the first plot
 
-      loss = classifier_criterion(classifier_output, labels)
-      loss.backward()
-      optimizer_classifier.step()
-    loss_classifier.append(loss.item())
-    print(f"Classifier: Epoch {epoch} loss: {loss.item()}")
+    # Plot for Classifier
+    axs[2].plot(range(classifier_epochs), loss_classifier)
+    axs[2].set_title('Classifier Loss')
+    axs[2].set_xlabel('Epoch')
+    # axs[2].set_ylabel('Loss')  # Optional, as it shares the y-axis with the first plot
 
-  print("======================================\nTrained classifier\n======================================")
+    plt.tight_layout()  # Adjust the padding between and around subplots
+    plt.show()
+
+    pdb.set_trace()
+
+    torch.save(SAE1.state_dict(), 'SAE1.pth')
+    torch.save(SAE2.state_dict(), 'SAE2.pth')
+    torch.save(classifier.state_dict(), 'classifier.pth')
+  else:
+    SAE1.load_state_dict(torch.load('SAE1.pth'))
+    SAE2.load_state_dict(torch.load('SAE2.pth'))
+    classifier.load_state_dict(torch.load('classifier.pth'))
 
   print("Infer data from trained SAE")
   encoded_test_data, test_labels = encode_data(test_dataloader, SAE1, SAE2, device)
@@ -328,28 +363,3 @@ if __name__ == "__main__":
 
   accuracy = 100 * correct / total
   print(f'Accuracy of the model on the test dataset: {accuracy:.2f}%')
-
-  dig, axs = plt.subplots(1, 3, figsize=(15,5))
-  
-  axs[0].plot(range(SAE1_epochs), loss_sae1)
-  axs[0].set_title('SAE1 Loss')
-  axs[0].set_xlabel('Epoch')
-  axs[0].set_ylabel('Loss')
-
-  # Plot for SAE2
-  axs[1].plot(range(SAE2_epochs), loss_sae2)
-  axs[1].set_title('SAE2 Loss')
-  axs[1].set_xlabel('Epoch')
-  # axs[1].set_ylabel('Loss')  # Optional, as it shares the y-axis with the first plot
-
-  # Plot for Classifier
-  axs[2].plot(range(classifier_epochs), loss_classifier)
-  axs[2].set_title('Classifier Loss')
-  axs[2].set_xlabel('Epoch')
-  # axs[2].set_ylabel('Loss')  # Optional, as it shares the y-axis with the first plot
-
-  plt.tight_layout()  # Adjust the padding between and around subplots
-  plt.show()
-
-# Seed: 94912564 = 80.79%
-# Seed: 2071878563 = 84.75%
