@@ -145,11 +145,14 @@ if __name__ == "__main__":
   device = torch.device("cuda:0" if use_cuda else "cpu")
   torch.backends.cudnn.benchmark = True
 
-  torch.manual_seed(0)
-  np.random.seed(0)
-  random.seed(0)
+  # seed = int(np.random.rand() * (2**32 - 1))
+  seed = 2071878563
+
+  torch.manual_seed(seed)
+  np.random.seed(seed)
+  random.seed(seed)
   if use_cuda:
-      torch.cuda.manual_seed_all(0)
+      torch.cuda.manual_seed_all(seed)
 
   data, labels = get_data_from_abide()
   labels = np.array(labels)
@@ -326,17 +329,27 @@ if __name__ == "__main__":
   accuracy = 100 * correct / total
   print(f'Accuracy of the model on the test dataset: {accuracy:.2f}%')
 
+  dig, axs = plt.subplots(1, 3, figsize=(15,5))
   
-  x = range(SAE1_epochs)
-  plt.plot(x, loss_sae1)
+  axs[0].plot(range(SAE1_epochs), loss_sae1)
+  axs[0].set_title('SAE1 Loss')
+  axs[0].set_xlabel('Epoch')
+  axs[0].set_ylabel('Loss')
+
+  # Plot for SAE2
+  axs[1].plot(range(SAE2_epochs), loss_sae2)
+  axs[1].set_title('SAE2 Loss')
+  axs[1].set_xlabel('Epoch')
+  # axs[1].set_ylabel('Loss')  # Optional, as it shares the y-axis with the first plot
+
+  # Plot for Classifier
+  axs[2].plot(range(classifier_epochs), loss_classifier)
+  axs[2].set_title('Classifier Loss')
+  axs[2].set_xlabel('Epoch')
+  # axs[2].set_ylabel('Loss')  # Optional, as it shares the y-axis with the first plot
+
+  plt.tight_layout()  # Adjust the padding between and around subplots
   plt.show()
 
-  pdb.set_trace()
-  
-  x = range(SAE2_epochs)
-  plt.plot(x, loss_sae2)
-  plt.show()
-
-  x = range(classifier_epochs)
-  plt.plot(x, loss_classifier)
-  plt.show()
+# Seed: 94912564 = 80.79%
+# Seed: 2071878563 = 84.75%
