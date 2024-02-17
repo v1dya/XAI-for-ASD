@@ -2,6 +2,7 @@ import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torch.utils.data import Subset
@@ -14,7 +15,7 @@ from sklearn.feature_selection import RFE
 from sklearn.model_selection import train_test_split
 
 def get_data_from_abide():
-  downloads = 'abide/downloads/Outputs/ccs/filt_global/rois_aal/'
+  downloads = 'abide/downloads/Outputs/dparsf/filt_global/rois_aal/'
   pheno_file = 'abide/Phenotypic_V1_0b_preprocessed1.csv'
 
   pheno_file = open(pheno_file, 'r')
@@ -64,8 +65,7 @@ def get_feature_vecs(data):
 def get_top_features_from_SVM_RFE(X, Y, N):
   svm = SVC(kernel="linear")
 
-  rfe = RFE(estimator=svm, n_features_to_select=N, step=1, verbose=1)
-
+  rfe = RFE(estimator=svm, n_features_to_select=N, step=20, verbose=1)
 
   rfe.fit(X, Y)
 
@@ -96,12 +96,16 @@ class SparseAutoencoder(nn.Module):
     return encoded, decoded
   
 class SoftmaxClassifier(nn.Module):
-  def __init__(self, input_size, num_classes):
+  def __init__(self, input_size, hidden_size, num_classes):  # Add hidden_size
     super(SoftmaxClassifier, self).__init__()
-    self.linear = nn.Linear(input_size, num_classes)
+    self.linear1 = nn.Linear(input_size, hidden_size)
+    self.relu = nn.ReLU()  # Introduce a nonlinear activation function
+    self.linear2 = nn.Linear(hidden_size, num_classes)
 
   def forward(self, x):
-    out = self.linear(x)
+    out = self.linear1(x)
+    out = self.relu(out)  # Apply the activation
+    out = self.linear2(out)
     return out
   
 class CustomDataset(Dataset):
@@ -144,11 +148,18 @@ if __name__ == "__main__":
   device = torch.device("cuda:0" if use_cuda else "cpu")
   torch.backends.cudnn.benchmark = True
 
-  # torch.manual_seed(0)
-  # np.random.seed(0)
-  # random.seed(0)
-  # if use_cuda:
-  #     torch.cuda.manual_seed_all(0)
+  seed = int(np.random.rand() * (2**32 - 1))
+  seed = 723708028
+
+  # 2071878563 ccs aal 84%
+  # 723708028 dparsf aal 84% with 1 softmax layer
+  # 723708028 dparsf aal 85.13% with 2 softmax layer
+
+  torch.manual_seed(seed)
+  np.random.seed(seed)
+  random.seed(seed)
+  if use_cuda:
+      torch.cuda.manual_seed_all(seed)
 
   data, labels = get_data_from_abide()
   labels = np.array(labels)
@@ -157,12 +168,12 @@ if __name__ == "__main__":
   labels = labels - 1
 
 
-  feature_vecs = get_feature_vecs(data)
+  #feature_vecs = get_feature_vecs(data)
 
-  top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
-  #np.savetxt("top_features_116_step20.csv", top_features, delimiter=",")
+  #top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
+  #np.savetxt("top_features_dparsf_aal_116_step20.csv", top_features, delimiter=",")
   
-  #top_features = np.loadtxt('top_features_116_step20.csv', delimiter=',')
+  top_features = np.loadtxt('top_features_dparsf_aal_116_step20.csv', delimiter=',')
   
   train_idx, test_idx = train_test_split(list(range(len(top_features))), test_size=0.2)
 
@@ -179,119 +190,162 @@ if __name__ == "__main__":
   test_set = CustomDataset(dataset['test'], label['test'])
 
   params = {
-    'batch_size': 32,
+    'batch_size': 128,
     'shuffle': True,
     'num_workers': 0
   }
 
+  test_params = {
+    'batch_size': 128,
+    'num_workers': 0
+  }
+
   train_dataloader = DataLoader(train_set, **params)
-  test_dataloader = DataLoader(test_set, **params)
+  test_dataloader = DataLoader(test_set, **test_params)
 
-  SAE1 = SparseAutoencoder(1000, 200).to(device) 
-  SAE1_epochs = 200
-  optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
+  SAE1 = SparseAutoencoder(1000, 500).to(device)
+  SAE2 = SparseAutoencoder(500, 200).to(device)
+  classifier = SoftmaxClassifier(200, 100, 2).to(device) 
 
-  SAE2 = SparseAutoencoder(200, 100).to(device) 
-  SAE2_epochs = 200
-  optimizer_sae2 = optim.Adam( SAE2.parameters(), lr=0.001, weight_decay=1e-4 )
+  train_model = True
+  if (train_model):
+    SAE1_epochs = 200
+    optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
+    
+    SAE2_epochs = 200
+    optimizer_sae2 = optim.Adam( SAE2.parameters(), lr=0.001, weight_decay=1e-4 )
 
-  classifier = SoftmaxClassifier(100, 2).to(device) 
-  classifier_epochs = 100
-  optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
+    classifier_epochs = 150
+    optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
 
-  sae_criterion = nn.MSELoss()
-  classifier_criterion = nn.CrossEntropyLoss()
+    sae_criterion = nn.MSELoss()
+    classifier_criterion = nn.CrossEntropyLoss()
 
-  
+    
+    loss_sae1 =[]
+    #Train SAE 1
+    for epoch in range(SAE1_epochs):
+      for batch in train_dataloader:
+        data, labels = batch
+        data = data.float().to(device) 
 
-  #Train SAE 1
-  for epoch in range(SAE1_epochs):
+        optimizer_sae1.zero_grad()
+
+        encoded_features, decoded_featues = SAE1(data)
+
+        loss = sae_criterion(decoded_featues, data)
+        loss.backward()
+        optimizer_sae1.step()
+      loss_sae1.append(loss.item())
+      print(f"SAE 1: Epoch {epoch}, loss {loss.item()}")
+    
+    print("======================================\nTrained SAE 1\n======================================")
+    
+    encoded_features_from_sae1 = []
+    labels_from_sae1 = []
+
     for batch in train_dataloader:
       data, labels = batch
       data = data.float().to(device) 
 
-      optimizer_sae1.zero_grad()
+      with torch.no_grad():
+        encoded_features, _ = SAE1(data)
+        encoded_features_from_sae1.append(encoded_features)
+        labels_from_sae1.append(labels)
 
-      encoded_features, decoded_featues = SAE1(data)
+    encoded_dataset_tensor = torch.cat(encoded_features_from_sae1, dim=0)
+    labels_tensor = torch.cat(labels_from_sae1, dim=0)
 
-      loss = sae_criterion(decoded_featues, data)
-      loss.backward()
-      optimizer_sae1.step()
-    print(f"SAE 1: Epoch {epoch}, loss {loss.item()}")
-  
-  print("======================================\nTrained SAE 1\n======================================")
-  
-  encoded_features_from_sae1 = []
-  labels_from_sae1 = []
+    encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
 
-  for batch in train_dataloader:
-    data, labels = batch
-    data = data.float().to(device) 
+    encoded_dataset_loader = DataLoader(encoded_dataset, **params)
 
-    with torch.no_grad():
-      encoded_features, _ = SAE1(data)
-      encoded_features_from_sae1.append(encoded_features)
-      labels_from_sae1.append(labels)
+    loss_sae2 = []
+    # Train SAE 2
+    for epoch in range(SAE2_epochs):
+      for batch in encoded_dataset_loader:
+        data, labels = batch
+        data = data.float().to(device) 
 
-  encoded_dataset_tensor = torch.cat(encoded_features_from_sae1, dim=0)
-  labels_tensor = torch.cat(labels_from_sae1, dim=0)
+        optimizer_sae2.zero_grad()
 
-  encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
+        encoded_features, decoded_featues = SAE2(data)
 
-  encoded_dataset_loader = DataLoader(encoded_dataset, **params)
+        loss = sae_criterion(decoded_featues, data)
+        loss.backward()
+        optimizer_sae2.step()
+      loss_sae2.append(loss.item())
+      print(f"SAE 2: Epoch {epoch}, loss {loss.item()}")
 
-  # Train SAE 2
-  for epoch in range(SAE2_epochs):
+    print("======================================\nTrained SAE 2\n======================================")
+    
+    encoded_features_from_sae2 = []
+    labels_from_sae2 = []
     for batch in encoded_dataset_loader:
       data, labels = batch
       data = data.float().to(device) 
 
-      optimizer_sae2.zero_grad()
+      with torch.no_grad():
+        encoded_features, _ = SAE2(data)
+        encoded_features_from_sae2.append(encoded_features)
+        labels_from_sae2.append(labels)
 
-      encoded_features, decoded_featues = SAE2(data)
+    encoded_dataset_tensor = torch.cat(encoded_features_from_sae2, dim=0)
+    labels_tensor = torch.cat(labels_from_sae2, dim=0)
 
-      loss = sae_criterion(decoded_featues, data)
-      loss.backward()
-      optimizer_sae2.step()
-    print(f"SAE 2: Epoch {epoch}, loss {loss.item()}")
+    encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
 
-  print("======================================\nTrained SAE 2\n======================================")
-  
-  encoded_features_from_sae2 = []
-  labels_from_sae2 = []
-  for batch in encoded_dataset_loader:
-    data, labels = batch
-    data = data.float().to(device) 
+    encoded_dataset_loader = DataLoader(encoded_dataset, **params)
 
-    with torch.no_grad():
-      encoded_features, _ = SAE2(data)
-      encoded_features_from_sae2.append(encoded_features)
-      labels_from_sae2.append(labels)
+    loss_classifier = []
+    # Train classifier
+    for epoch in range(classifier_epochs):
+      for batch in encoded_dataset_loader:
+        data, labels = batch
+        data = data.float().to(device) 
+        labels = labels.long().to(device) 
 
-  encoded_dataset_tensor = torch.cat(encoded_features_from_sae2, dim=0)
-  labels_tensor = torch.cat(labels_from_sae2, dim=0)
+        optimizer_classifier.zero_grad()
 
-  encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor) 
+        classifier_output = classifier(data)
 
-  encoded_dataset_loader = DataLoader(encoded_dataset, **params)
+        loss = classifier_criterion(classifier_output, labels)
+        loss.backward()
+        optimizer_classifier.step()
+      loss_classifier.append(loss.item())
+      print(f"Classifier: Epoch {epoch} loss: {loss.item()}")
 
-  # Train classifier
-  for epoch in range(classifier_epochs):
-    for batch in encoded_dataset_loader:
-      data, labels = batch
-      data = data.float().to(device) 
-      labels = labels.long().to(device) 
+    print("======================================\nTrained classifier\n======================================")
 
-      optimizer_classifier.zero_grad()
+    dig, axs = plt.subplots(1, 3, figsize=(15,5))
+    
+    axs[0].plot(range(SAE1_epochs), loss_sae1)
+    axs[0].set_title('SAE1 Loss')
+    axs[0].set_xlabel('Epoch')
+    axs[0].set_ylabel('Loss')
 
-      classifier_output = classifier(data)
+    # Plot for SAE2
+    axs[1].plot(range(SAE2_epochs), loss_sae2)
+    axs[1].set_title('SAE2 Loss')
+    axs[1].set_xlabel('Epoch')
+    # axs[1].set_ylabel('Loss')  # Optional, as it shares the y-axis with the first plot
 
-      loss = classifier_criterion(classifier_output, labels)
-      loss.backward()
-      optimizer_classifier.step()
-    print(f"Classifier: Epoch {epoch} loss: {loss.item()}")
+    # Plot for Classifier
+    axs[2].plot(range(classifier_epochs), loss_classifier)
+    axs[2].set_title('Classifier Loss')
+    axs[2].set_xlabel('Epoch')
+    # axs[2].set_ylabel('Loss')  # Optional, as it shares the y-axis with the first plot
 
-  print("======================================\nTrained classifier\n======================================")
+    plt.tight_layout()  # Adjust the padding between and around subplots
+    plt.show()
+
+    torch.save(SAE1.state_dict(), 'SAE1.pth')
+    torch.save(SAE2.state_dict(), 'SAE2.pth')
+    torch.save(classifier.state_dict(), 'classifier.pth')
+  else:
+    SAE1.load_state_dict(torch.load('SAE1.pth'))
+    SAE2.load_state_dict(torch.load('SAE2.pth'))
+    classifier.load_state_dict(torch.load('classifier.pth'))
 
   print("Infer data from trained SAE")
   encoded_test_data, test_labels = encode_data(test_dataloader, SAE1, SAE2, device)
@@ -314,3 +368,5 @@ if __name__ == "__main__":
 
   accuracy = 100 * correct / total
   print(f'Accuracy of the model on the test dataset: {accuracy:.2f}%')
+
+  pdb.set_trace()
