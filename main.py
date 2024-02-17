@@ -15,7 +15,7 @@ from sklearn.feature_selection import RFE
 from sklearn.model_selection import train_test_split
 
 def get_data_from_abide():
-  downloads = 'abide/downloads/Outputs/ccs/filt_global/rois_aal/'
+  downloads = 'abide/downloads/Outputs/dparsf/filt_global/rois_aal/'
   pheno_file = 'abide/Phenotypic_V1_0b_preprocessed1.csv'
 
   pheno_file = open(pheno_file, 'r')
@@ -65,8 +65,7 @@ def get_feature_vecs(data):
 def get_top_features_from_SVM_RFE(X, Y, N):
   svm = SVC(kernel="linear")
 
-  rfe = RFE(estimator=svm, n_features_to_select=N, step=1, verbose=1)
-
+  rfe = RFE(estimator=svm, n_features_to_select=N, step=20, verbose=1)
 
   rfe.fit(X, Y)
 
@@ -97,12 +96,16 @@ class SparseAutoencoder(nn.Module):
     return encoded, decoded
   
 class SoftmaxClassifier(nn.Module):
-  def __init__(self, input_size, num_classes):
+  def __init__(self, input_size, hidden_size, num_classes):  # Add hidden_size
     super(SoftmaxClassifier, self).__init__()
-    self.linear = nn.Linear(input_size, num_classes)
+    self.linear1 = nn.Linear(input_size, hidden_size)
+    self.relu = nn.ReLU()  # Introduce a nonlinear activation function
+    self.linear2 = nn.Linear(hidden_size, num_classes)
 
   def forward(self, x):
-    out = self.linear(x)
+    out = self.linear1(x)
+    out = self.relu(out)  # Apply the activation
+    out = self.linear2(out)
     return out
   
 class CustomDataset(Dataset):
@@ -145,8 +148,12 @@ if __name__ == "__main__":
   device = torch.device("cuda:0" if use_cuda else "cpu")
   torch.backends.cudnn.benchmark = True
 
-  # seed = int(np.random.rand() * (2**32 - 1))
-  seed = 2071878563
+  seed = int(np.random.rand() * (2**32 - 1))
+  seed = 723708028
+
+  # 2071878563 ccs aal 84%
+  # 723708028 dparsf aal 84% with 1 softmax layer
+  # 723708028 dparsf aal 85.13% with 2 softmax layer
 
   torch.manual_seed(seed)
   np.random.seed(seed)
@@ -164,9 +171,9 @@ if __name__ == "__main__":
   #feature_vecs = get_feature_vecs(data)
 
   #top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000)
-  #np.savetxt("top_features_116_step20.csv", top_features, delimiter=",")
+  #np.savetxt("top_features_dparsf_aal_116_step20.csv", top_features, delimiter=",")
   
-  top_features = np.loadtxt('top_features_116_step20.csv', delimiter=',')
+  top_features = np.loadtxt('top_features_dparsf_aal_116_step20.csv', delimiter=',')
   
   train_idx, test_idx = train_test_split(list(range(len(top_features))), test_size=0.2)
 
@@ -198,9 +205,9 @@ if __name__ == "__main__":
 
   SAE1 = SparseAutoencoder(1000, 500).to(device)
   SAE2 = SparseAutoencoder(500, 200).to(device)
-  classifier = SoftmaxClassifier(200, 2).to(device) 
+  classifier = SoftmaxClassifier(200, 100, 2).to(device) 
 
-  train_model = False
+  train_model = True
   if (train_model):
     SAE1_epochs = 200
     optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
@@ -208,7 +215,7 @@ if __name__ == "__main__":
     SAE2_epochs = 200
     optimizer_sae2 = optim.Adam( SAE2.parameters(), lr=0.001, weight_decay=1e-4 )
 
-    classifier_epochs = 1000
+    classifier_epochs = 150
     optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
 
     sae_criterion = nn.MSELoss()
@@ -332,8 +339,6 @@ if __name__ == "__main__":
     plt.tight_layout()  # Adjust the padding between and around subplots
     plt.show()
 
-    pdb.set_trace()
-
     torch.save(SAE1.state_dict(), 'SAE1.pth')
     torch.save(SAE2.state_dict(), 'SAE2.pth')
     torch.save(classifier.state_dict(), 'classifier.pth')
@@ -363,3 +368,5 @@ if __name__ == "__main__":
 
   accuracy = 100 * correct / total
   print(f'Accuracy of the model on the test dataset: {accuracy:.2f}%')
+
+  pdb.set_trace()
