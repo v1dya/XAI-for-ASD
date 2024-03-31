@@ -2,4 +2,5 @@
 scikit-learn
 matplotlib
 numpy
-pdb
+nilearn
+networkx

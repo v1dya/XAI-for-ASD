@@ -45,33 +45,52 @@ def get_data_from_abide():
 def get_feature_vecs(data):
   roi_size = data[0].shape[1]
   feature_vec_size = int(roi_size * (roi_size - 1) / 2)
-  feature_vecs = np.zeros([len(data), feature_vec_size])
+  feature_vecs = []
+  feature_indices = []
 
   vectorized_fisher_transfrom = np.vectorize(fishers_z_transform)
   
   for i in range(len(data)):
     corr_coefs = np.corrcoef(data[i], rowvar=False)
     corr_coefs = np.nan_to_num(corr_coefs)
+    f = []
+    idx = []
 
     transformed_corr_coefs = vectorized_fisher_transfrom(corr_coefs)
 
     lower_triangular_indices = np.tril_indices(transformed_corr_coefs.shape[0], -1)
-    feature_vector = transformed_corr_coefs[lower_triangular_indices]
 
-    feature_vecs[i] = feature_vector
+    for row_idx, col_idx in zip(*lower_triangular_indices):  # Unpack indices
+      coefficient = transformed_corr_coefs[row_idx, col_idx]
+      f.append(coefficient)
+      idx.append([row_idx, col_idx])
 
-  return feature_vecs
+    feature_vecs.append(f)
+    feature_indices.append(idx)
 
-def get_top_features_from_SVM_RFE(X, Y, N, step):
+  feature_vecs = np.array(feature_vecs)
+  feature_indices = np.array(feature_indices)
+
+  return feature_vecs, feature_indices
+
+def get_top_features_from_SVM_RFE(X, Y, indices, N, step):
   svm = SVC(kernel="linear")
-
   rfe = RFE(estimator=svm, n_features_to_select=N, step=step, verbose=1)
 
   rfe.fit(X, Y)
 
   top_features = rfe.transform(X)
+  top_indices = np.where(rfe.support_)[0]
 
-  return top_features
+  top_ROIs = []
+
+  for i in top_indices:
+    roi = indices[0][i]
+    top_ROIs.append(roi)
+
+  top_ROIs = np.array(top_ROIs)
+
+  return top_features, top_ROIs 
 
 def fishers_z_transform(x):
   # Handling the case where correlation coefficient is 1 or -1
@@ -228,12 +247,15 @@ if __name__ == "__main__":
   labels_from_abide = labels_from_abide - 1
 
 
-  #feature_vecs = get_feature_vecs(data)
+  #feature_vecs, feature_vec_indices = get_feature_vecs(data)
 
-  #top_features = get_top_features_from_SVM_RFE(feature_vecs, labels, 1000, 20)
+  #top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 20)
+
   #np.savetxt("sorted_top_features_116_step20.csv", top_features, delimiter=",")
+  #np.savetxt("sorted_top_rois_116_step20.csv", top_rois, delimiter=",")
   
   top_features = np.loadtxt('sorted_top_features_116_step20.csv', delimiter=',')
+  top_rois = np.loadtxt('sorted_top_rois_116_step20.csv', delimiter=',')
   
   skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)  # Example with 5 folds
 
