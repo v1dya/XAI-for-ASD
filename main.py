@@ -1,4 +1,5 @@
 import random
+import shap
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,6 +14,14 @@ import pdb
 from sklearn.svm import SVC
 from sklearn.feature_selection import RFE
 from sklearn.model_selection import train_test_split, StratifiedKFold
+from captum.attr import IntegratedGradients
+from nilearn import datasets, plotting
+import networkx as nx
+from lime import lime_tabular
+
+model = None
+use_cuda = torch.cuda.is_available()
+device = torch.device("cuda:0" if use_cuda else "cpu")
 
 def get_data_from_abide():
   downloads = 'abide/downloads/Outputs/ccs/filt_global/rois_aal/'
@@ -221,16 +230,230 @@ def get_encoded_data(model, dataloader, dataloader_params, device):
   encoded_dataset = TensorDataset(encoded_dataset_tensor, labels_tensor)
   encoded_dataset_loader = DataLoader(encoded_dataset, **dataloader_params)
 
-  return encoded_dataset, encoded_dataset_loader 
+  return encoded_dataset, encoded_dataset_loader
+
+def find_top_rois_using_LIME(model, test_dataloader, train_dataloader, rois):
+  features_list = []
+  labels_list = []
+
+  for features, labels in train_dataloader:
+      # Move data to CPU if it's on a GPU
+      features = features.cpu().numpy()
+      labels = labels.cpu().numpy()
+      
+      # Append to lists
+      features_list.append(features)
+      labels_list.append(labels)
+
+  # Concatenate all features and labels
+  X_train = np.concatenate(features_list, axis=0)
+  Y_train = np.concatenate(labels_list, axis=0)
+
+  # Assuming 'dataloader' is your DataLoader instance
+  features_list = []
+  labels_list = []
+
+  for features, labels in test_dataloader:
+      # Move data to CPU if it's on a GPU
+      features = features.cpu().numpy()
+      labels = labels.cpu().numpy()
+      
+      # Append to lists
+      features_list.append(features)
+      labels_list.append(labels)
+
+  # Concatenate all features and labels
+  X_test = np.concatenate(features_list, axis=0)
+  Y_test = np.concatenate(labels_list, axis=0)
+
+  # Initialize LIME Explainer for tabular data
+  explainer = lime_tabular.LimeTabularExplainer(
+      training_data=X_train,  # Use your training data here
+      feature_names=list(range(X_train.shape[1])),  # Feature names or indices
+      class_names=['Class 0', 'Class 1'],  # Output classes
+      mode='classification'
+  )
+
+  # Select an instance to explain
+  instance_index = 0  # Example index, choose appropriately
+  instance = X_test[instance_index]
+
+  # Generate explanation for the selected instance
+  explanation = explainer.explain_instance(
+      data_row=instance, 
+      predict_fn=model_predict_lime,  # Use the prediction function defined above
+      num_features=1000,  # Number of top features you want to show
+      top_labels=1  # Number of top labels for multi-class classification
+  )
+
+  feature_weights = explanation.as_list(label=explanation.top_labels[0])
+
+  sorted_features = sorted(feature_weights, key=lambda x: abs(x[1]), reverse=True)
+
+  top_indices = [find_index_from_string(feature[0]) for feature in sorted_features[:100]]
+
+  return rois[top_indices]
+
+def find_top_rois_using_SHAP(N, model, test_dataloader, train_dataloader, rois):
+  # Select a background dataset from train_dataloader
+  background_data = []
+  for batch in train_dataloader:
+      data, labels = batch
+      data = data.float().to(device) 
+      labels = labels.long().to(device)
+
+      background_data.append(data)
+      if len(background_data) >= 100:  # Collect 100 samples, adjust as needed
+          break
+  background_data = torch.cat(background_data)[:100]  # Adjust size as needed
+
+  # Select test instances from test_dataloader
+  test_instances = []
+  for batch in test_dataloader:
+      data, labels = batch
+      data = data.float().to(device) 
+      labels = labels.long().to(device) 
+
+      test_instances.append(data)
+      if len(test_instances) >= 5:  # Let's say we want to explain 5 test instances
+          break
+  test_instances = torch.cat(test_instances)[:5]  # Adjust size as needed
+
+  background_data = background_data.to(device)
+  test_instances = test_instances.to(device)
+
+  # Initialize SHAP DeepExplainer
+  explainer = shap.DeepExplainer(model, background_data)
+
+  # Compute SHAP values for test_instances
+  shap_values = explainer.shap_values(test_instances)
+
+  mean_abs_shap_values = np.mean(np.abs(shap_values), axis=0)
+
+  feature_importance = np.mean(mean_abs_shap_values, axis=1)
+
+  # Step 4: Find indices of top 100 features
+  top_indices = np.argsort(feature_importance)[-(N):][::-1]
+
+  return rois[top_indices]
   
+def find_top_rois_using_integrated_gradients(N, model, test_dataloader, rois):
+  for batch in test_dataloader:
+    data, labels = batch
+    data = data.float().to(device) 
+    labels = labels.long().to(device) 
+    break
+
+  model.eval()
+  data.requires_grad = True  # Enable gradient computation on the input
+
+  # Baseline (here, a tensor of zeros)
+  baseline = torch.zeros_like(data).to(device)
+
+  # Initialize Integrated Gradients with model
+  integrated_gradients = IntegratedGradients(model)
+
+  # Compute attributions for the autism positive class
+  # Assuming the first output (index 0) corresponds to autism positive
+  # Convergence delta is approximate error
+  attributions_ig, delta = integrated_gradients.attribute(data, baselines=baseline, target=0, return_convergence_delta=True)
+
+  # Calculate the mean of the attributions across all input samples to get an average importance
+  # Postive attribution means positive contribution of that feature
+  # Negative attribution means negative contribution of that feature
+  # 0 attribution means 0 contribution of that feature
+  attributions_mean = attributions_ig.mean(dim=0).cpu().detach().numpy()
+
+  # To get top features we need to take the features in descending order of attribution value to get most contributing features
+  abs_attribution = np.abs(attributions_mean)
+
+  top_indices = np.argsort(abs_attribution)[-(N):][::-1]
+
+  return rois[top_indices]
+
+def get_threshold_from_percentile(adjacency_matrix, percentile):
+  all_weights = adjacency_matrix[np.nonzero(adjacency_matrix)]
+  threshold = np.percentile(all_weights, percentile) 
+  return threshold
+
+def expand_relative_coords(coordinates, percent):
+  # Calculate center
+  center = np.mean(coordinates, axis=0)
+
+  # Center the coordinates
+  centered_coordinates = coordinates - center 
+
+  # Scale the coordinates
+  scaled_coordinates = centered_coordinates * percent
+
+  # Shift back to original center
+  spread_coordinates = scaled_coordinates + center 
+
+  return spread_coordinates
+
+
+def print_connections(rois, method):
+  atlas = datasets.fetch_atlas_aal(version='SPM5')
+  labels = atlas.labels  # List of AAL region labels
+
+  edge_cmap = plt.cm.get_cmap('viridis')  # Colormap choice 
+
+  num_connections = len(rois)
+  weights = np.linspace(1, 0.1, num_connections)
+
+  G = nx.Graph()
+
+  # Add nodes (brain regions)
+  for label in labels:
+      G.add_node(label) 
+
+  # Add edges with weights
+  for i, roi_pair in enumerate(rois):
+      roi1_index = int(roi_pair[0])
+      roi2_index = int(roi_pair[1])
+      roi1_name = labels[roi1_index]
+      roi2_name = labels[roi2_index]
+      weight = weights[i]
+      G.add_edge(roi1_name, roi2_name, weight=weight) 
+
+  # Customize colors etc. if desired
+  node_color = 'grey'
+
+  coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08) 
+
+  adjacency_matrix = nx.adjacency_matrix(G).todense() 
+
+  # Dynamic Thresholding
+  edge_threshold = get_threshold_from_percentile(adjacency_matrix, 0)  # Show all 
+
+  # Draw graph with AAL background
+  plotting.plot_connectome(adjacency_matrix, coordinates, node_color=node_color,
+                          edge_vmin=0, edge_vmax=weights.max(), edge_cmap=edge_cmap,
+                          edge_threshold=edge_threshold, colorbar=True, 
+                          title=f'Top {num_connections} Connections ({method})')
+
+  plt.show()
+
+def find_index_from_string(stri):
+  stri = stri.split(' ')
+
+  for i in stri:
+    if i.isnumeric() and float(i) >= 1:
+      return int(i)
+
+def model_predict_lime(data):
+  # Convert data to tensor, pass through model, and return softmax probabilities
+  data_tensor = torch.tensor(data).float().to(device)
+  model.eval()
+  with torch.no_grad():
+    outputs = model(data_tensor)
+    probabilities = torch.softmax(outputs, dim=1).cpu().numpy()
+
+  return probabilities
 
 
 if __name__ == "__main__":
-  use_cuda = torch.cuda.is_available()
   print("Torch Cuda is Available =",use_cuda)
-
-  device = torch.device("cuda:0" if use_cuda else "cpu")
-
   # seed = int(np.random.rand() * (2**32 - 1))
   seed = 2071878563
 
@@ -254,8 +477,8 @@ if __name__ == "__main__":
   #np.savetxt("sorted_top_features_116_step20.csv", top_features, delimiter=",")
   #np.savetxt("sorted_top_rois_116_step20.csv", top_rois, delimiter=",")
   
-  top_features = np.loadtxt('sorted_top_features_116_step20.csv', delimiter=',')
-  top_rois = np.loadtxt('sorted_top_rois_116_step20.csv', delimiter=',')
+  top_features = np.loadtxt('sorted_top_features_ccs_116_step20.csv', delimiter=',')
+  top_rois = np.loadtxt('sorted_top_rois_ccs_116_step20.csv', delimiter=',')
   
   skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)  # Example with 5 folds
 
@@ -332,7 +555,7 @@ if __name__ == "__main__":
       sae_criterion = nn.MSELoss()
       classifier_criterion = nn.CrossEntropyLoss()
 
-      fine_tuning_epochs = 2000
+      fine_tuning_epochs = 50
 
       loss_sae1 = []
       val_sae1 = []
@@ -555,19 +778,19 @@ if __name__ == "__main__":
       SAE2.load_state_dict(torch.load('SAE2.pth'))
       classifier.load_state_dict(torch.load('classifier.pth'))
 
-    print("Infer data from trained SAE")
-    encoded_test_data, test_labels = encode_data(test_dataloader, SAE1, SAE2, device)
+    print("======================================\nTesting Model\n======================================")
 
-    classifier.eval()
+    model.eval()
 
     true_labels = np.array([])
     predicted_labels = np.array([])
 
-    for i in range(len(encoded_test_data)):
-      data = encoded_test_data[i].float().to(device) 
-      labels = test_labels[i].long().to(device) 
+    for batch in test_dataloader:
+      data, labels = batch
+      data = data.float().to(device)
+      labels = labels.long().to(device)
 
-      outputs = classifier(data)
+      outputs = model(data)
 
       _, predicted = torch.max(outputs.data, 1)
 
@@ -622,3 +845,15 @@ if __name__ == "__main__":
   print(f'Precision: {precision:.2f}')
   print(f'F1_Score: {f1:.2f}')
   print(f'Confusion Matrix:\n{cm}')
+
+  rois_ig = find_top_rois_using_integrated_gradients(100, model, test_dataloader, top_rois)
+
+  print_connections(rois_ig, "Integrated Gradients")
+
+  rois_shap = find_top_rois_using_SHAP(100, model, test_dataloader, train_dataloader, top_rois)
+
+  print_connections(rois_shap, "SHAP")
+
+  rois_lime = find_top_rois_using_LIME(model, test_dataloader, train_dataloader, top_rois)
+
+  print_connections(rois_lime, "LIME")

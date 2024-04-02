@@ -10,7 +10,7 @@ import networkx as nx
 atlas = datasets.fetch_atlas_aal()
 labels = atlas.labels  # List of AAL region labels
 
-top_rois = np.loadtxt('sorted_top_rois_116_step20.csv', delimiter=',')[0:100]
+top_rois = np.loadtxt('sorted_top_rois_ccs_116_step20.csv', delimiter=',')[0:100]
 # Generate weights
 num_connections = len(top_rois)
 weights = np.linspace(1, 0.1, num_connections)  # Example: Linear decrease
