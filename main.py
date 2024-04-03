@@ -910,9 +910,9 @@ if __name__ == "__main__":
         torch.save(SAE2.state_dict(), 'SAE2_50_ccs_epochs.pth')
         torch.save(classifier.state_dict(), 'classifier_50_ccs_epochs.pth')
     else:
-      SAE1.load_state_dict(torch.load('SAE1_50_ccs_epochs.pth'))
-      SAE2.load_state_dict(torch.load('SAE2_50_ccs_epochs.pth'))
-      classifier.load_state_dict(torch.load('classifier_50_ccs_epochs.pth'))
+      SAE1.load_state_dict(torch.load('SAE1_50_ccs_epochs.pth', map_location=torch.device(device)))
+      SAE2.load_state_dict(torch.load('SAE2_50_ccs_epochs.pth', map_location=torch.device(device)))
+      classifier.load_state_dict(torch.load('classifier_50_ccs_epochs.pth', map_location=torch.device(device)))
 
     print("======================================\nTesting Model\n======================================")
 
