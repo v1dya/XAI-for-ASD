@@ -464,7 +464,7 @@ def expand_relative_coords(coordinates, percent):
   return spread_coordinates
 
 
-def print_connections(rois, weights, method, show_now=False):
+def print_connections(rois, weights, method, pipeline, show_now=False, save=False):
   atlas = datasets.fetch_atlas_aal(version='SPM5')
   labels = atlas.labels  # List of AAL region labels
   weights = np.array(weights)
@@ -578,6 +578,10 @@ def print_connections(rois, weights, method, show_now=False):
                                   norm=norm,
                                   orientation='vertical')
   cb.set_label('Importance')
+
+  if save:
+    filename = f"{pipeline}_plot_{method}_{num_connections}_connections.png"
+    plt.savefig(filename)
 
   if show_now:
     plt.show()
@@ -919,13 +923,13 @@ if __name__ == "__main__":
         plt.show()
 
       if save_model:
-        torch.save(SAE1.state_dict(), 'SAE1_50_ccs_epochs.pth')
-        torch.save(SAE2.state_dict(), 'SAE2_50_ccs_epochs.pth')
-        torch.save(classifier.state_dict(), 'classifier_50_ccs_epochs.pth')
+        torch.save(SAE1.state_dict(), f'SAE1_50_{pipeline}_epochs.pth')
+        torch.save(SAE2.state_dict(), f'SAE2_50_{pipeline}_epochs.pth')
+        torch.save(classifier.state_dict(), f'classifier_50_{pipeline}_epochs.pth')
     else:
-      SAE1.load_state_dict(torch.load('SAE1_50_ccs_epochs.pth', map_location=torch.device(device)))
-      SAE2.load_state_dict(torch.load('SAE2_50_ccs_epochs.pth', map_location=torch.device(device)))
-      classifier.load_state_dict(torch.load('classifier_50_ccs_epochs.pth', map_location=torch.device(device)))
+      SAE1.load_state_dict(torch.load(f'SAE1_50_{pipeline}_epochs.pth', map_location=torch.device(device)))
+      SAE2.load_state_dict(torch.load(f'SAE2_50_{pipeline}_epochs.pth', map_location=torch.device(device)))
+      classifier.load_state_dict(torch.load(f'classifier_50_{pipeline}_epochs.pth', map_location=torch.device(device)))
 
     print("======================================\nTesting Model\n======================================")
 
@@ -999,26 +1003,26 @@ if __name__ == "__main__":
 
   rois_ig, weights_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_ig, weights_ig, "Integrated Gradients")
+  print_connections(rois_ig, weights_ig, "Integrated Gradients", pipeline)
 
   rois_shap, weights_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
 
-  print_connections(rois_shap, weights_shap, "SHAP")
+  print_connections(rois_shap, weights_shap, "SHAP", pipeline)
 
   rois_lime, weights_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
 
-  print_connections(rois_lime, weights_lime, "LIME")
+  print_connections(rois_lime, weights_lime, "LIME", pipeline)
 
   rois_deeplift, weights_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_deeplift, weights_deeplift, "DeepLift")
+  print_connections(rois_deeplift, weights_deeplift, "DeepLift", pipeline)
 
   rois_deepliftshap, weights_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_deepliftshap, weights_deepliftshap, "DeepLiftShap")
+  print_connections(rois_deepliftshap, weights_deepliftshap, "DeepLiftShap", pipeline)
 
   rois_gradientshap, weights_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_gradientshap, weights_gradientshap, "GradientShap")
+  print_connections(rois_gradientshap, weights_gradientshap, "GradientShap", pipeline)
 
   plt.show()
