@@ -477,6 +477,17 @@ def print_connections(rois, weights, method, show_now=False):
 
   cmap = colormaps['viridis']
 
+  fig = plt.figure(figsize=(15, 8))
+  ax_connection_connectome = fig.add_axes([0.05, 0.55, 0.8, 0.40])
+  ax_connection_colorbar = fig.add_axes([0.85, 0.55, 0.05, 0.40])
+
+  ax_roi_connectome = fig.add_axes([0.05, 0.05, 0.8, 0.40])
+  ax_roi_colorbar = fig.add_axes([0.85, 0.05, 0.05, 0.40])
+
+  # Set the figure-wide title
+  fig.suptitle(f'Top {num_connections} connections and ROI Importance using {method}', fontsize=16)
+
+
   G = nx.Graph()
 
   # Add nodes (brain regions)
@@ -496,18 +507,25 @@ def print_connections(rois, weights, method, show_now=False):
 
   coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08) 
 
-  adjacency_matrix = nx.adjacency_matrix(G).todense() 
+  adjacency_matrix = nx.adjacency_matrix(G).todense()
 
   # Dynamic Thresholding
   edge_threshold = get_threshold_from_percentile(adjacency_matrix, 0)  # Show all 
 
-  plotting.plot_connectome(adjacency_matrix, coordinates, node_color=node_color,
-                          edge_vmin=0, edge_vmax=weights.max(), edge_cmap=edge_cmap,
-                          edge_threshold=edge_threshold, colorbar=True, 
-                          title=f'Top {num_connections} Connections ({method})')
+  plotting.plot_connectome(adjacency_matrix, coordinates,
+                          node_color=node_color,
+                          edge_vmin=0,
+                          edge_vmax=weights.max(),
+                          edge_cmap=edge_cmap,
+                          edge_threshold=edge_threshold,
+                          axes=ax_connection_connectome)
+  
+  norm = Normalize(vmin=weights.min(), vmax=weights.max())
 
-  if show_now:
-    plt.show()
+  cb = colorbar.ColorbarBase(ax_connection_colorbar, cmap=cmap,
+                                  norm=norm,
+                                  orientation='vertical')
+  cb.set_label('Importance')
 
   # Count the occurrence of each ROI
   roi_counts = np.zeros(len(labels))
@@ -547,21 +565,16 @@ def print_connections(rois, weights, method, show_now=False):
 
   normalized_colors = cmap((roi_importances - roi_importances.min()) / (roi_importances.max() - roi_importances.min()))
 
-  fig = plt.figure(figsize=(15, 8))
-  ax_connectome = fig.add_axes([0.05, 0.1, 0.6, 0.8])
-  ax_colorbar = fig.add_axes([0.7, 0.1, 0.05, 0.8]) 
-
   plotting.plot_connectome(adjacency_matrix, coordinates,
                          node_color=normalized_colors,
                          node_size=normalized_sizes,
                          display_mode='ortho',
-                         title=f'{method} Top ROIs highlighted using color and size',
                          colorbar=False,
-                         axes=ax_connectome)
+                         axes=ax_roi_connectome)
 
   norm = Normalize(vmin=roi_importances.min(), vmax=roi_importances.max())
 
-  cb = colorbar.ColorbarBase(ax_colorbar, cmap=cmap,
+  cb = colorbar.ColorbarBase(ax_roi_colorbar, cmap=cmap,
                                   norm=norm,
                                   orientation='vertical')
   cb.set_label('Importance')
