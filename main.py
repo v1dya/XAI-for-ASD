@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Subset
 from torch.utils.data import TensorDataset
 import numpy as np
+import pandas as pd
 import os
 import pdb
 from sklearn.svm import SVC
@@ -408,10 +409,10 @@ def find_top_rois_using_DeepLiftShap(N, model, test_dataloader, rois):
 
   baseline = torch.zeros_like(data).to(device)
 
-  deep_lift = DeepLiftShap(model)
-  attributions_dl = deep_lift.attribute(data, baselines=baseline, target=0)
+  deep_lift_shap = DeepLiftShap(model)
+  attributions_dls = deep_lift_shap.attribute(data, baselines=baseline, target=0)
 
-  attributions_mean = attributions_dl.mean(dim=0).cpu().detach().numpy()
+  attributions_mean = attributions_dls.mean(dim=0).cpu().detach().numpy()
 
   abs_attribution = np.abs(attributions_mean)
 
@@ -431,11 +432,35 @@ def find_top_rois_using_GradientShap(N, model, test_dataloader, rois):
 
   baseline = torch.zeros_like(data).to(device)
 
-  deep_lift = GradientShap(model)
+  gradient_shap = GradientShap(model)
 
-  attributions_dl = deep_lift.attribute(data, baselines=baseline, target=0)
+  attributions_gs = gradient_shap.attribute(data, baselines=baseline, target=0)
 
-  attributions_mean = attributions_dl.mean(dim=0).cpu().detach().numpy()
+  attributions_mean = attributions_gs.mean(dim=0).cpu().detach().numpy()
+
+  abs_attribution = np.abs(attributions_mean)
+
+  top_indices = np.argsort(abs_attribution)[-(N):][::-1]
+
+  return rois[top_indices], abs_attribution[top_indices]
+
+def find_top_rois_using_GuidedBackprop(N, model, test_dataloader, rois):
+  for batch in test_dataloader:
+    data, labels = batch
+    data = data.float().to(device) 
+    labels = labels.long().to(device) 
+    break
+
+  model.eval()
+  data.requires_grad = True  # Enable gradient computation on the input
+
+  baseline = torch.zeros_like(data).to(device)
+
+  guided_backprop = GuidedBackprop(model)
+
+  attributions_gb = guided_backprop.attribute(data, target=0)
+
+  attributions_mean = attributions_gb.mean(dim=0).cpu().detach().numpy()
 
   abs_attribution = np.abs(attributions_mean)
 
@@ -468,6 +493,7 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
   atlas = datasets.fetch_atlas_aal(version='SPM5')
   labels = atlas.labels  # List of AAL region labels
   weights = np.array(weights)
+  rois = rois.astype(int)
 
   weights = ((weights - weights.min()) / (weights.max() - weights.min())) * 10
 
@@ -586,6 +612,14 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
   if show_now:
     plt.show()
 
+  labels = np.array(atlas.labels)
+  top_connections = labels[rois[:10]]
+  connections_with_weights = np.array([(connection[0], connection[1], np.round(weight, 2)) for connection, weight in zip(top_connections, weights)])
+
+  # Convert the top connections to a DataFrame for nice formatting
+  top_connections_df = pd.DataFrame(connections_with_weights, columns=['ROI 1', 'ROI 2', 'Importance'])
+
+  return top_connections_df
 
 def find_index_from_string(stri):
   stri = stri.split(' ')
@@ -1003,26 +1037,30 @@ if __name__ == "__main__":
 
   rois_ig, weights_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_ig, weights_ig, "Integrated Gradients", pipeline)
-
   rois_shap, weights_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
-
-  print_connections(rois_shap, weights_shap, "SHAP", pipeline)
 
   rois_lime, weights_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
 
-  print_connections(rois_lime, weights_lime, "LIME", pipeline)
-
   rois_deeplift, weights_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
-
-  print_connections(rois_deeplift, weights_deeplift, "DeepLift", pipeline)
 
   rois_deepliftshap, weights_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_deepliftshap, weights_deepliftshap, "DeepLiftShap", pipeline)
-
   rois_gradientshap, weights_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_gradientshap, weights_gradientshap, "GradientShap", pipeline)
+  rois_guidedbackprop, weights_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
+
+  interpretation_results = [
+    (rois_ig, weights_ig, "Integrated Gradients"),
+    (rois_shap, weights_shap, "SHAP"),
+    (rois_lime, weights_lime, "LIME"),
+    (rois_deeplift, weights_deeplift, "DeepLift"),
+    (rois_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
+    (rois_gradientshap, weights_gradientshap, "GradientShap"),
+    (rois_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
+  ]
+
+  for i in interpretation_results:
+    print("=" * 65,f'\n{i[2]}\n' + ('=' * 65))
+    print(print_connections(i[0], i[1], i[2], pipeline).to_string(index=False))
 
   plt.show()
