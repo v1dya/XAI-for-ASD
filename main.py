@@ -666,8 +666,8 @@ if __name__ == "__main__":
   # np.savetxt(f'sorted_top_features_{pipeline}_116_step20.csv', top_features, delimiter=",")
   # np.savetxt(f'sorted_top_features_{pipeline}_116_step20.csv', top_rois, delimiter=",")
   
-  top_features = np.loadtxt(f'sorted_top_features_{pipeline}_116_step20.csv', delimiter=',')
-  top_rois = np.loadtxt(f'sorted_top_rois_{pipeline}_116_step20.csv', delimiter=',')
+  top_features = np.loadtxt(f'sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
+  top_rois = np.loadtxt(f'sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
   
   skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)  # Example with 5 folds
 
@@ -728,9 +728,9 @@ if __name__ == "__main__":
     classifier = SoftmaxClassifier(100, 2).to(device)
     model = StackedSparseAutoencoder(SAE1, SAE2, classifier).to(device)
 
-    verbose = True
-    train_model = False
-    save_model = False
+    verbose = False
+    train_model = True
+    save_model = True
     if (train_model):
       SAE1_epochs = 50
       optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
