@@ -114,37 +114,25 @@ def fishers_z_transform(x):
     return 0.5 * np.log((1 + x) / (1 - x))
   
 
-class SparseAutoencoder(nn.Module):
-  def __init__(self, input_size, encoded_output_size, rho=0.2, beta=2, criterion=nn.MSELoss()):
+class Autoencoder(nn.Module):
+  def __init__(self, input_size, encoded_output_size, criterion=nn.MSELoss()):
     """
     rho: desired sparsity parameter
     beta: weight of the KL divergence term
     """
-    super(SparseAutoencoder, self).__init__()
+    super(Autoencoder, self).__init__()
 
     self.encoder = nn.Linear(input_size, encoded_output_size)
     self.decoder = nn.Linear(encoded_output_size, input_size)
-    self.rho = rho
-    self.beta = beta
     self.criterion = criterion
-  
-  def kl_divergence(self, rho, rho_hat):
-    """Calculates KL divergence for regularization."""
-    return rho * torch.log(rho / rho_hat) + (1 - rho) * torch.log((1 - rho) / (1 - rho_hat)) 
   
   def forward(self, x):
     encoded = torch.relu(self.encoder(x))
 
-    # Compute average activation of hidden neurons
-    rho_hat = torch.mean(encoded, dim=0) 
-
-    kl_loss = self.kl_divergence(self.rho, rho_hat).sum()
-
     decoded = self.decoder(encoded)
 
-    # Total loss: Reconstruction loss + KL divergence
     mse_loss = self.criterion(decoded, x)
-    loss = mse_loss + self.beta * kl_loss 
+    loss = mse_loss
 
     return encoded, decoded, loss
   
@@ -157,16 +145,16 @@ class SoftmaxClassifier(nn.Module):
     out = self.linear(x)
     return out
   
-class StackedSparseAutoencoder(nn.Module):
-  def __init__(self, SAE1, SAE2, classifier):
-      super(StackedSparseAutoencoder, self).__init__()
-      self.sae1 = SAE1  # Assuming you have your pre-trained SAE1
-      self.sae2 = SAE2  # Assuming you have your pre-trained SAE2
+class StackedAutoencoder(nn.Module):
+  def __init__(self, AE1, AE2, classifier):
+      super(StackedAutoencoder, self).__init__()
+      self.ae1 = AE1  # Assuming you have your pre-trained AE1
+      self.ae2 = AE2  # Assuming you have your pre-trained AE2
       self.classifier = classifier 
 
   def forward(self, x):
-      x = self.sae1.encoder(x)  # Pass through the encoder of SAE1
-      x = self.sae2.encoder(x)  # Pass through the encoder of SAE2
+      x = self.ae1.encoder(x)  # Pass through the encoder of AE1
+      x = self.ae2.encoder(x)  # Pass through the encoder of AE2
       x = self.classifier(x)
       return x
   
@@ -185,7 +173,7 @@ class CustomDataset(Dataset):
     return self.data.dataset[data_idx], self.labels.dataset[labels_idx] 
 
 
-def encode_data(dataloader, sae1, sae2, device):
+def encode_data(dataloader, ae1, ae2, device):
   encoded_data = []
   labels = []
 
@@ -194,8 +182,8 @@ def encode_data(dataloader, sae1, sae2, device):
     data = data.float().to(device)
 
     with torch.no_grad():
-      encoded_features, _, __ = sae1(data)
-      encoded_features, _, __ = sae2(encoded_features)
+      encoded_features, _, __ = ae1(data)
+      encoded_features, _, __ = ae2(encoded_features)
       encoded_data.append(encoded_features)
       labels.append(label)
 
@@ -682,7 +670,6 @@ if __name__ == "__main__":
     dataset = {}
     label = {}
 
-    num_features = top_features.shape[1]
     # Split the training set into training and validation
     train_subidx, val_subidx = train_test_split(train_idx, test_size=0.1, random_state=seed)  # Adjust test_size as needed
 
@@ -717,7 +704,7 @@ if __name__ == "__main__":
     }
 
     test_params = {
-      'batch_size': 64,
+      'batch_size': 128,
       'shuffle': False,
       'num_workers': 0
     }
@@ -726,44 +713,44 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_set, **test_params)
     val_dataloader = DataLoader(val_set, **val_params)
 
-    SAE1 = SparseAutoencoder(num_features, 500).to(device)
-    SAE2 = SparseAutoencoder(500, 100).to(device)
+    AE1 = Autoencoder(1000, 500).to(device)
+    AE2 = Autoencoder(500, 100).to(device)
     classifier = SoftmaxClassifier(100, 2).to(device)
-    model = StackedSparseAutoencoder(SAE1, SAE2, classifier).to(device)
+    model = StackedAutoencoder(AE1, AE2, classifier).to(device)
 
     verbose = True
-    train_model = False
+    train_model = True
     save_model = False
     if (train_model):
-      SAE1_epochs = 50
-      optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
+      AE1_epochs = 50
+      optimizer_ae1 = optim.Adam( AE1.parameters(), lr=0.001, weight_decay=1e-4 )
       
-      SAE2_epochs = 50
-      optimizer_sae2 = optim.Adam( SAE2.parameters(), lr=0.001, weight_decay=1e-4 )
+      AE2_epochs = 50
+      optimizer_ae2 = optim.Adam( AE2.parameters(), lr=0.001, weight_decay=1e-4 )
 
       classifier_epochs = 100
       optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
 
-      sae_criterion = nn.MSELoss()
+      ae_criterion = nn.MSELoss()
       classifier_criterion = nn.CrossEntropyLoss()
 
       fine_tuning_epochs = 50
 
-      loss_sae1 = []
-      val_sae1 = []
+      loss_ae1 = []
+      val_ae1 = []
 
-      for epoch in range(SAE1_epochs):
+      for epoch in range(AE1_epochs):
         for batch in train_dataloader:
           data, labels = batch
           data = data.float().to(device) 
 
-          optimizer_sae1.zero_grad()
+          optimizer_ae1.zero_grad()
 
-          encoded_features, decoded_featues, loss = SAE1(data)
+          encoded_features, decoded_featues, loss = AE1(data)
 
           loss.backward()
-          optimizer_sae1.step()
-        loss_sae1.append(loss.item())
+          optimizer_ae1.step()
+        loss_ae1.append(loss.item())
 
         val_loss = 0.0
         with torch.no_grad():
@@ -771,36 +758,36 @@ if __name__ == "__main__":
             data, labels = batch
             data = data.float().to(device)
 
-            encoded_features, decoded_featues, loss = SAE1(data)
+            encoded_features, decoded_featues, loss = AE1(data)
             val_loss += loss.item()
 
         val_loss /= len(val_dataloader)
-        val_sae1.append(val_loss)
+        val_ae1.append(val_loss)
 
         if verbose:
-          print(f"SAE 1: Epoch {epoch}, loss {loss.item()}, validation loss {val_loss}")
+          print(f"AE 1: Epoch {epoch}, loss {loss.item()}, validation loss {val_loss}")
       
-      print("======================================\nTrained SAE 1\n======================================")
+      print("======================================\nTrained AE 1\n======================================")
 
-      encoded_dataset, encoded_dataset_loader = get_encoded_data(SAE1, train_dataloader, params, device)
+      encoded_dataset, encoded_dataset_loader = get_encoded_data(AE1, train_dataloader, params, device)
 
-      val_encoded_dataset, val_encoded_dataset_loader = get_encoded_data(SAE1, val_dataloader, val_params, device)
+      val_encoded_dataset, val_encoded_dataset_loader = get_encoded_data(AE1, val_dataloader, val_params, device)
 
-      loss_sae2 = []
-      val_sae2 = []
+      loss_ae2 = []
+      val_ae2 = []
 
-      for epoch in range(SAE2_epochs):
+      for epoch in range(AE2_epochs):
         for batch in encoded_dataset_loader:
           data, labels = batch
           data = data.float().to(device) 
 
-          optimizer_sae2.zero_grad()
+          optimizer_ae2.zero_grad()
 
-          encoded_features, decoded_featues, loss = SAE2(data)
+          encoded_features, decoded_featues, loss = AE2(data)
 
           loss.backward()
-          optimizer_sae2.step()
-        loss_sae2.append(loss.item())
+          optimizer_ae2.step()
+        loss_ae2.append(loss.item())
 
         val_loss = 0.0
         with torch.no_grad():
@@ -808,20 +795,20 @@ if __name__ == "__main__":
             data, labels = batch
             data = data.float().to(device)
 
-            encoded_features, decoded_featues, loss = SAE2(data)
+            encoded_features, decoded_featues, loss = AE2(data)
             val_loss += loss.item()
 
         val_loss /= len(val_encoded_dataset_loader)
-        val_sae2.append(val_loss)
+        val_ae2.append(val_loss)
 
         if verbose:
-          print(f"SAE 2: Epoch {epoch}, loss {loss.item()}, validation loss {val_loss}")
+          print(f"AE 2: Epoch {epoch}, loss {loss.item()}, validation loss {val_loss}")
 
-      print("======================================\nTrained SAE 2\n======================================")
+      print("======================================\nTrained AE 2\n======================================")
 
-      encoded_dataset, encoded_dataset_loader = get_encoded_data(SAE2, encoded_dataset_loader, params, device)
+      encoded_dataset, encoded_dataset_loader = get_encoded_data(AE2, encoded_dataset_loader, params, device)
 
-      val_encoded_dataset, val_encoded_dataset_loader = get_encoded_data(SAE2, val_encoded_dataset_loader, val_params, device)
+      val_encoded_dataset, val_encoded_dataset_loader = get_encoded_data(AE2, val_encoded_dataset_loader, val_params, device)
 
       loss_classifier = []
       val_classifier = []
@@ -918,18 +905,18 @@ if __name__ == "__main__":
 
       dig, axs = plt.subplots(1, 5, figsize=(15,5))
       
-      # Plot for SAE1
-      axs[0].plot(range(SAE1_epochs), loss_sae1, label='Training Loss')
-      axs[0].plot(range(SAE1_epochs), val_sae1, label='Validation Loss')
-      axs[0].set_title('SAE1 Loss')
+      # Plot for AE1
+      axs[0].plot(range(AE1_epochs), loss_ae1, label='Training Loss')
+      axs[0].plot(range(AE1_epochs), val_ae1, label='Validation Loss')
+      axs[0].set_title('AE1 Loss')
       axs[0].set_xlabel('Epoch')
       axs[0].set_ylabel('Loss')
       axs[0].legend()
 
-      # Plot for SAE2
-      axs[1].plot(range(SAE2_epochs), loss_sae2, label='Training Loss')
-      axs[1].plot(range(SAE2_epochs), val_sae2, label='Validation Loss')
-      axs[1].set_title('SAE2 Loss')
+      # Plot for AE2
+      axs[1].plot(range(AE2_epochs), loss_ae2, label='Training Loss')
+      axs[1].plot(range(AE2_epochs), val_ae2, label='Validation Loss')
+      axs[1].set_title('AE2 Loss')
       axs[1].set_xlabel('Epoch')
       axs[1].legend()
 
@@ -1064,4 +1051,5 @@ if __name__ == "__main__":
 
   print("Seed is",seed)
 
-  plt.show()
+  if verbose:
+    plt.show()
