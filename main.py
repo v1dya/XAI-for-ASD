@@ -640,9 +640,11 @@ def model_predict_lime(data):
 
 
 if __name__ == "__main__":
+  # Set print options to display the whole array
+  # np.set_printoptions(threshold=np.inf)
   print("Torch Cuda is Available =",use_cuda)
   # seed = int(np.random.rand() * (2**32 - 1))
-  seed = 2071878563
+  seed = 2109459083
 
   torch.manual_seed(seed)
   np.random.seed(seed)
@@ -1058,5 +1060,7 @@ if __name__ == "__main__":
   for i in interpretation_results:
     print("=" * 65,f'\n{i[2]}\n' + ('=' * 65))
     print(print_connections(i[0], i[1], i[2], pipeline).to_string(index=False))
+
+  print("Seed is",seed)
 
   plt.show()
