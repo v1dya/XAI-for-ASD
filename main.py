@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Subset
 from torch.utils.data import TensorDataset
 import numpy as np
+import pandas as pd
 import os
 import pdb
 from sklearn.svm import SVC
@@ -408,10 +409,10 @@ def find_top_rois_using_DeepLiftShap(N, model, test_dataloader, rois):
 
   baseline = torch.zeros_like(data).to(device)
 
-  deep_lift = DeepLiftShap(model)
-  attributions_dl = deep_lift.attribute(data, baselines=baseline, target=0)
+  deep_lift_shap = DeepLiftShap(model)
+  attributions_dls = deep_lift_shap.attribute(data, baselines=baseline, target=0)
 
-  attributions_mean = attributions_dl.mean(dim=0).cpu().detach().numpy()
+  attributions_mean = attributions_dls.mean(dim=0).cpu().detach().numpy()
 
   abs_attribution = np.abs(attributions_mean)
 
@@ -431,11 +432,35 @@ def find_top_rois_using_GradientShap(N, model, test_dataloader, rois):
 
   baseline = torch.zeros_like(data).to(device)
 
-  deep_lift = GradientShap(model)
+  gradient_shap = GradientShap(model)
 
-  attributions_dl = deep_lift.attribute(data, baselines=baseline, target=0)
+  attributions_gs = gradient_shap.attribute(data, baselines=baseline, target=0)
 
-  attributions_mean = attributions_dl.mean(dim=0).cpu().detach().numpy()
+  attributions_mean = attributions_gs.mean(dim=0).cpu().detach().numpy()
+
+  abs_attribution = np.abs(attributions_mean)
+
+  top_indices = np.argsort(abs_attribution)[-(N):][::-1]
+
+  return rois[top_indices], abs_attribution[top_indices]
+
+def find_top_rois_using_GuidedBackprop(N, model, test_dataloader, rois):
+  for batch in test_dataloader:
+    data, labels = batch
+    data = data.float().to(device) 
+    labels = labels.long().to(device) 
+    break
+
+  model.eval()
+  data.requires_grad = True  # Enable gradient computation on the input
+
+  baseline = torch.zeros_like(data).to(device)
+
+  guided_backprop = GuidedBackprop(model)
+
+  attributions_gb = guided_backprop.attribute(data, target=0)
+
+  attributions_mean = attributions_gb.mean(dim=0).cpu().detach().numpy()
 
   abs_attribution = np.abs(attributions_mean)
 
@@ -464,10 +489,11 @@ def expand_relative_coords(coordinates, percent):
   return spread_coordinates
 
 
-def print_connections(rois, weights, method, show_now=False):
+def print_connections(rois, weights, method, pipeline, show_now=False, save=False):
   atlas = datasets.fetch_atlas_aal(version='SPM5')
   labels = atlas.labels  # List of AAL region labels
   weights = np.array(weights)
+  rois = rois.astype(int)
 
   weights = ((weights - weights.min()) / (weights.max() - weights.min())) * 10
 
@@ -476,6 +502,17 @@ def print_connections(rois, weights, method, show_now=False):
   num_connections = len(rois)
 
   cmap = colormaps['viridis']
+
+  fig = plt.figure(figsize=(15, 8))
+  ax_connection_connectome = fig.add_axes([0.05, 0.55, 0.8, 0.40])
+  ax_connection_colorbar = fig.add_axes([0.85, 0.55, 0.05, 0.40])
+
+  ax_roi_connectome = fig.add_axes([0.05, 0.05, 0.8, 0.40])
+  ax_roi_colorbar = fig.add_axes([0.85, 0.05, 0.05, 0.40])
+
+  # Set the figure-wide title
+  fig.suptitle(f'Top {num_connections} connections and ROI Importance using {method}', fontsize=16)
+
 
   G = nx.Graph()
 
@@ -496,18 +533,25 @@ def print_connections(rois, weights, method, show_now=False):
 
   coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08) 
 
-  adjacency_matrix = nx.adjacency_matrix(G).todense() 
+  adjacency_matrix = nx.adjacency_matrix(G).todense()
 
   # Dynamic Thresholding
   edge_threshold = get_threshold_from_percentile(adjacency_matrix, 0)  # Show all 
 
-  plotting.plot_connectome(adjacency_matrix, coordinates, node_color=node_color,
-                          edge_vmin=0, edge_vmax=weights.max(), edge_cmap=edge_cmap,
-                          edge_threshold=edge_threshold, colorbar=True, 
-                          title=f'Top {num_connections} Connections ({method})')
+  plotting.plot_connectome(adjacency_matrix, coordinates,
+                          node_color=node_color,
+                          edge_vmin=0,
+                          edge_vmax=weights.max(),
+                          edge_cmap=edge_cmap,
+                          edge_threshold=edge_threshold,
+                          axes=ax_connection_connectome)
+  
+  norm = Normalize(vmin=weights.min(), vmax=weights.max())
 
-  if show_now:
-    plt.show()
+  cb = colorbar.ColorbarBase(ax_connection_colorbar, cmap=cmap,
+                                  norm=norm,
+                                  orientation='vertical')
+  cb.set_label('Importance')
 
   # Count the occurrence of each ROI
   roi_counts = np.zeros(len(labels))
@@ -547,28 +591,35 @@ def print_connections(rois, weights, method, show_now=False):
 
   normalized_colors = cmap((roi_importances - roi_importances.min()) / (roi_importances.max() - roi_importances.min()))
 
-  fig = plt.figure(figsize=(15, 8))
-  ax_connectome = fig.add_axes([0.05, 0.1, 0.6, 0.8])
-  ax_colorbar = fig.add_axes([0.7, 0.1, 0.05, 0.8]) 
-
   plotting.plot_connectome(adjacency_matrix, coordinates,
                          node_color=normalized_colors,
                          node_size=normalized_sizes,
                          display_mode='ortho',
-                         title=f'{method} Top ROIs highlighted using color and size',
                          colorbar=False,
-                         axes=ax_connectome)
+                         axes=ax_roi_connectome)
 
   norm = Normalize(vmin=roi_importances.min(), vmax=roi_importances.max())
 
-  cb = colorbar.ColorbarBase(ax_colorbar, cmap=cmap,
+  cb = colorbar.ColorbarBase(ax_roi_colorbar, cmap=cmap,
                                   norm=norm,
                                   orientation='vertical')
   cb.set_label('Importance')
 
+  if save:
+    filename = f"{pipeline}_plot_{method}_{num_connections}_connections.png"
+    plt.savefig(filename)
+
   if show_now:
     plt.show()
 
+  labels = np.array(atlas.labels)
+  top_connections = labels[rois[:10]]
+  connections_with_weights = np.array([(connection[0], connection[1], np.round(weight, 2)) for connection, weight in zip(top_connections, weights)])
+
+  # Convert the top connections to a DataFrame for nice formatting
+  top_connections_df = pd.DataFrame(connections_with_weights, columns=['ROI 1', 'ROI 2', 'Importance'])
+
+  return top_connections_df
 
 def find_index_from_string(stri):
   stri = stri.split(' ')
@@ -589,9 +640,11 @@ def model_predict_lime(data):
 
 
 if __name__ == "__main__":
+  # Set print options to display the whole array
+  # np.set_printoptions(threshold=np.inf)
   print("Torch Cuda is Available =",use_cuda)
   # seed = int(np.random.rand() * (2**32 - 1))
-  seed = 2071878563
+  seed = 2109459083
 
   torch.manual_seed(seed)
   np.random.seed(seed)
@@ -610,14 +663,14 @@ if __name__ == "__main__":
 
   # feature_vecs, feature_vec_indices = get_feature_vecs(data)
 
-  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 20)
+  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 1)
 
-  # np.savetxt(f'sorted_top_features_{pipeline}_116_step20.csv', top_features, delimiter=",")
-  # np.savetxt(f'sorted_top_features_{pipeline}_116_step20.csv', top_rois, delimiter=",")
+  # np.savetxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', top_features, delimiter=",")
+  # np.savetxt(f'data/sorted_top_frois_{pipeline}_116_step1.csv', top_rois, delimiter=",")
   
-  top_features = np.loadtxt(f'sorted_top_features_{pipeline}_116_step20.csv', delimiter=',')
-  top_rois = np.loadtxt(f'sorted_top_rois_{pipeline}_116_step20.csv', delimiter=',')
-  
+  top_features = np.loadtxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
+  top_rois = np.loadtxt(f'data/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
+
   skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)  # Example with 5 folds
 
   avg_TP, avg_FP, avg_FN, avg_TN = [], [], [], []
@@ -629,6 +682,7 @@ if __name__ == "__main__":
     dataset = {}
     label = {}
 
+    num_features = top_features.shape[1]
     # Split the training set into training and validation
     train_subidx, val_subidx = train_test_split(train_idx, test_size=0.1, random_state=seed)  # Adjust test_size as needed
 
@@ -672,7 +726,7 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_set, **test_params)
     val_dataloader = DataLoader(val_set, **val_params)
 
-    SAE1 = SparseAutoencoder(1000, 500).to(device)
+    SAE1 = SparseAutoencoder(num_features, 500).to(device)
     SAE2 = SparseAutoencoder(500, 100).to(device)
     classifier = SoftmaxClassifier(100, 2).to(device)
     model = StackedSparseAutoencoder(SAE1, SAE2, classifier).to(device)
@@ -906,13 +960,9 @@ if __name__ == "__main__":
         plt.show()
 
       if save_model:
-        torch.save(SAE1.state_dict(), 'SAE1_50_ccs_epochs.pth')
-        torch.save(SAE2.state_dict(), 'SAE2_50_ccs_epochs.pth')
-        torch.save(classifier.state_dict(), 'classifier_50_ccs_epochs.pth')
+        torch.save(model.state_dict(), f'models/model_{pipeline}_step1.pth')
     else:
-      SAE1.load_state_dict(torch.load('SAE1_50_ccs_epochs.pth', map_location=torch.device(device)))
-      SAE2.load_state_dict(torch.load('SAE2_50_ccs_epochs.pth', map_location=torch.device(device)))
-      classifier.load_state_dict(torch.load('classifier_50_ccs_epochs.pth', map_location=torch.device(device)))
+      model.load_state_dict(torch.load(f'models/model_{pipeline}_step1.pth', map_location=torch.device(device)))
 
     print("======================================\nTesting Model\n======================================")
 
@@ -986,26 +1036,32 @@ if __name__ == "__main__":
 
   rois_ig, weights_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_ig, weights_ig, "Integrated Gradients")
-
   rois_shap, weights_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
-
-  print_connections(rois_shap, weights_shap, "SHAP")
 
   rois_lime, weights_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
 
-  print_connections(rois_lime, weights_lime, "LIME")
-
   rois_deeplift, weights_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
-
-  print_connections(rois_deeplift, weights_deeplift, "DeepLift")
 
   rois_deepliftshap, weights_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_deepliftshap, weights_deepliftshap, "DeepLiftShap")
-
   rois_gradientshap, weights_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
 
-  print_connections(rois_gradientshap, weights_gradientshap, "GradientShap")
+  rois_guidedbackprop, weights_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
+
+  interpretation_results = [
+    (rois_ig, weights_ig, "Integrated Gradients"),
+    (rois_shap, weights_shap, "SHAP"),
+    (rois_lime, weights_lime, "LIME"),
+    (rois_deeplift, weights_deeplift, "DeepLift"),
+    (rois_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
+    (rois_gradientshap, weights_gradientshap, "GradientShap"),
+    (rois_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
+  ]
+
+  for i in interpretation_results:
+    print("=" * 65,f'\n{i[2]}\n' + ('=' * 65))
+    print(print_connections(i[0], i[1], i[2], pipeline).to_string(index=False))
+
+  print("Seed is",seed)
 
   plt.show()
