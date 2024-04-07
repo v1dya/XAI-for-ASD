@@ -682,6 +682,7 @@ if __name__ == "__main__":
     dataset = {}
     label = {}
 
+    num_features = top_features.shape[1]
     # Split the training set into training and validation
     train_subidx, val_subidx = train_test_split(train_idx, test_size=0.1, random_state=seed)  # Adjust test_size as needed
 
@@ -725,7 +726,7 @@ if __name__ == "__main__":
     test_dataloader = DataLoader(test_set, **test_params)
     val_dataloader = DataLoader(val_set, **val_params)
 
-    SAE1 = SparseAutoencoder(1000, 500).to(device)
+    SAE1 = SparseAutoencoder(num_features, 500).to(device)
     SAE2 = SparseAutoencoder(500, 100).to(device)
     classifier = SoftmaxClassifier(100, 2).to(device)
     model = StackedSparseAutoencoder(SAE1, SAE2, classifier).to(device)
