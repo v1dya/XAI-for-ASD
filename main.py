@@ -663,11 +663,11 @@ if __name__ == "__main__":
 
   # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 1)
 
-  # np.savetxt(f'sorted_top_features_{pipeline}_116_step1.csv', top_features, delimiter=",")
-  # np.savetxt(f'sorted_top_frois_{pipeline}_116_step1.csv', top_rois, delimiter=",")
+  # np.savetxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', top_features, delimiter=",")
+  # np.savetxt(f'data/sorted_top_frois_{pipeline}_116_step1.csv', top_rois, delimiter=",")
   
-  top_features = np.loadtxt(f'sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
-  top_rois = np.loadtxt(f'sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
+  top_features = np.loadtxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
+  top_rois = np.loadtxt(f'data/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
 
   skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)  # Example with 5 folds
 
@@ -728,9 +728,9 @@ if __name__ == "__main__":
     classifier = SoftmaxClassifier(100, 2).to(device)
     model = StackedSparseAutoencoder(SAE1, SAE2, classifier).to(device)
 
-    verbose = False
-    train_model = True
-    save_model = True
+    verbose = True
+    train_model = False
+    save_model = False
     if (train_model):
       SAE1_epochs = 50
       optimizer_sae1 = optim.Adam( SAE1.parameters(), lr=0.001, weight_decay=1e-4 )
@@ -957,9 +957,9 @@ if __name__ == "__main__":
         plt.show()
 
       if save_model:
-        torch.save(model.state_dict(), f'model_{pipeline}_step1.pth')
+        torch.save(model.state_dict(), f'models/model_{pipeline}_step1.pth')
     else:
-      model.load_state_dict(torch.load(f'model_{pipeline}_step1.pth', map_location=torch.device(device)))
+      model.load_state_dict(torch.load(f'models/model_{pipeline}_step1.pth', map_location=torch.device(device)))
 
     print("======================================\nTesting Model\n======================================")
 
@@ -1058,7 +1058,5 @@ if __name__ == "__main__":
   for i in interpretation_results:
     print("=" * 65,f'\n{i[2]}\n' + ('=' * 65))
     print(print_connections(i[0], i[1], i[2], pipeline).to_string(index=False))
-
-  pdb.set_trace()
 
   plt.show()
