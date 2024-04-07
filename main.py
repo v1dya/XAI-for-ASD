@@ -661,14 +661,14 @@ if __name__ == "__main__":
 
   # feature_vecs, feature_vec_indices = get_feature_vecs(data)
 
-  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 20)
+  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 1)
 
-  # np.savetxt(f'sorted_top_features_{pipeline}_116_step20.csv', top_features, delimiter=",")
-  # np.savetxt(f'sorted_top_features_{pipeline}_116_step20.csv', top_rois, delimiter=",")
+  # np.savetxt(f'sorted_top_features_{pipeline}_116_step1.csv', top_features, delimiter=",")
+  # np.savetxt(f'sorted_top_frois_{pipeline}_116_step1.csv', top_rois, delimiter=",")
   
   top_features = np.loadtxt(f'sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
   top_rois = np.loadtxt(f'sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
-  
+
   skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)  # Example with 5 folds
 
   avg_TP, avg_FP, avg_FN, avg_TN = [], [], [], []
@@ -957,13 +957,9 @@ if __name__ == "__main__":
         plt.show()
 
       if save_model:
-        torch.save(SAE1.state_dict(), f'SAE1_50_{pipeline}_epochs.pth')
-        torch.save(SAE2.state_dict(), f'SAE2_50_{pipeline}_epochs.pth')
-        torch.save(classifier.state_dict(), f'classifier_50_{pipeline}_epochs.pth')
+        torch.save(model.state_dict(), f'model_{pipeline}_step1.pth')
     else:
-      SAE1.load_state_dict(torch.load(f'SAE1_50_{pipeline}_epochs.pth', map_location=torch.device(device)))
-      SAE2.load_state_dict(torch.load(f'SAE2_50_{pipeline}_epochs.pth', map_location=torch.device(device)))
-      classifier.load_state_dict(torch.load(f'classifier_50_{pipeline}_epochs.pth', map_location=torch.device(device)))
+      model.load_state_dict(torch.load(f'model_{pipeline}_step1.pth', map_location=torch.device(device)))
 
     print("======================================\nTesting Model\n======================================")
 
@@ -1062,5 +1058,7 @@ if __name__ == "__main__":
   for i in interpretation_results:
     print("=" * 65,f'\n{i[2]}\n' + ('=' * 65))
     print(print_connections(i[0], i[1], i[2], pipeline).to_string(index=False))
+
+  pdb.set_trace()
 
   plt.show()
