@@ -1,3 +1,4 @@
+import json
 import random
 import shap
 import torch
@@ -112,6 +113,13 @@ def fishers_z_transform(x):
     return -np.inf
   else:
     return 0.5 * np.log((1 + x) / (1 - x))
+  
+def safe_divide(numerator, denominator):
+  """Safely divide two numbers, avoiding division by zero."""
+  if denominator == 0:
+      return 0
+  else:
+      return numerator / denominator
   
 
 class Autoencoder(nn.Module):
@@ -285,7 +293,14 @@ def find_top_rois_using_LIME(N, model, test_dataloader, train_dataloader, rois):
 
   sorted_feature_weights = [abs(feature[1]) for feature in sorted_features]
 
-  return rois[sorted_feature_indices[:N]], sorted_feature_weights[:N]
+  return rois[sorted_feature_indices[:N]], sorted_feature_weights[:N], sorted_feature_indices
+
+def find_index_from_string(stri):
+  stri = stri.split(' ')
+
+  for i in stri:
+    if i.isnumeric() and (float(i) >= 1 or float(i) == 0):
+      return int(i)
 
 def find_top_rois_using_SHAP(N, model, test_dataloader, train_dataloader, rois):
   # Select a background dataset from train_dataloader
@@ -328,7 +343,7 @@ def find_top_rois_using_SHAP(N, model, test_dataloader, train_dataloader, rois):
   # Step 4: Find indices of top 100 features
   top_indices = np.argsort(feature_importance)[-(N):][::-1]
 
-  return rois[top_indices], feature_importance[top_indices]
+  return rois[top_indices], feature_importance[top_indices], top_indices
   
 def find_top_rois_using_integrated_gradients(N, model, test_dataloader, rois):
   for batch in test_dataloader:
@@ -362,7 +377,7 @@ def find_top_rois_using_integrated_gradients(N, model, test_dataloader, rois):
 
   top_indices = np.argsort(abs_attribution)[-(N):][::-1]
 
-  return rois[top_indices], abs_attribution[top_indices]
+  return rois[top_indices], abs_attribution[top_indices], top_indices
 
 def find_top_rois_using_DeepLift(N, model, test_dataloader, rois):
   for batch in test_dataloader:
@@ -383,7 +398,7 @@ def find_top_rois_using_DeepLift(N, model, test_dataloader, rois):
 
   top_indices = np.argsort(abs_attribution)[-(N):][::-1]
 
-  return rois[top_indices], abs_attribution[top_indices]
+  return rois[top_indices], abs_attribution[top_indices], top_indices
 
 def find_top_rois_using_DeepLiftShap(N, model, test_dataloader, rois):
   for batch in test_dataloader:
@@ -406,7 +421,7 @@ def find_top_rois_using_DeepLiftShap(N, model, test_dataloader, rois):
 
   top_indices = np.argsort(abs_attribution)[-(N):][::-1]
 
-  return rois[top_indices], abs_attribution[top_indices]
+  return rois[top_indices], abs_attribution[top_indices], top_indices
 
 def find_top_rois_using_GradientShap(N, model, test_dataloader, rois):
   for batch in test_dataloader:
@@ -430,7 +445,7 @@ def find_top_rois_using_GradientShap(N, model, test_dataloader, rois):
 
   top_indices = np.argsort(abs_attribution)[-(N):][::-1]
 
-  return rois[top_indices], abs_attribution[top_indices]
+  return rois[top_indices], abs_attribution[top_indices], top_indices
 
 def find_top_rois_using_GuidedBackprop(N, model, test_dataloader, rois):
   for batch in test_dataloader:
@@ -454,7 +469,7 @@ def find_top_rois_using_GuidedBackprop(N, model, test_dataloader, rois):
 
   top_indices = np.argsort(abs_attribution)[-(N):][::-1]
 
-  return rois[top_indices], abs_attribution[top_indices]
+  return rois[top_indices], abs_attribution[top_indices], top_indices
 
 def get_threshold_from_percentile(adjacency_matrix, percentile):
   all_weights = adjacency_matrix[np.nonzero(adjacency_matrix)]
@@ -609,13 +624,6 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
 
   return top_connections_df
 
-def find_index_from_string(stri):
-  stri = stri.split(' ')
-
-  for i in stri:
-    if i.isnumeric() and float(i) >= 1:
-      return int(i)
-
 def model_predict_lime(data):
   # Convert data to tensor, pass through model, and return softmax probabilities
   data_tensor = torch.tensor(data).float().to(device)
@@ -626,39 +634,7 @@ def model_predict_lime(data):
 
   return probabilities
 
-
-if __name__ == "__main__":
-  # Set print options to display the whole array
-  # np.set_printoptions(threshold=np.inf)
-  print("Torch Cuda is Available =",use_cuda)
-  # seed = int(np.random.rand() * (2**32 - 1))
-  seed = 2109459083
-
-  torch.manual_seed(seed)
-  np.random.seed(seed)
-  random.seed(seed)
-  if use_cuda:
-      torch.cuda.manual_seed_all(seed)
-
-  pipeline = 'ccs'
-
-  data, labels = get_data_from_abide(pipeline)
-  labels_from_abide = np.array(labels)
-  
-  #Convert labels from 1, 2 to 0, 1 for PyTorch compatibility
-  labels_from_abide = labels_from_abide - 1
-
-
-  # feature_vecs, feature_vec_indices = get_feature_vecs(data)
-
-  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 1)
-
-  # np.savetxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', top_features, delimiter=",")
-  # np.savetxt(f'data/sorted_top_frois_{pipeline}_116_step1.csv', top_rois, delimiter=",")
-  
-  top_features = np.loadtxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
-  top_rois = np.loadtxt(f'data/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
-
+def train_and_eval_model(top_features, labels_from_abide, verbose=False, train_model=True, save_model=False):
   skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)  # Example with 5 folds
 
   avg_TP, avg_FP, avg_FN, avg_TN = [], [], [], []
@@ -666,7 +642,10 @@ if __name__ == "__main__":
   fold = 0
   for train_idx, test_idx in skf.split(top_features, labels_from_abide):
     fold+=1
-    print(f'======================================\nSplit {fold}\n======================================')
+
+    if verbose:
+      print(f'======================================\nSplit {fold}\n======================================')
+    
     dataset = {}
     label = {}
 
@@ -682,10 +661,11 @@ if __name__ == "__main__":
     dataset['test'] = Subset(top_features, test_idx)
     label['test'] = Subset(labels_from_abide, test_idx)
 
-    print("Total: ", len(top_features))  # Original dataset size
-    print("Train: ", len(dataset['train'].indices)) 
-    print("Test: ", len(dataset['test'].indices)) 
-    print("Validation: ", len(dataset['val'].indices)) 
+    if verbose:
+      print("Total: ", len(top_features))  # Original dataset size
+      print("Train: ", len(dataset['train'].indices)) 
+      print("Test: ", len(dataset['test'].indices)) 
+      print("Validation: ", len(dataset['val'].indices)) 
 
     train_set = CustomDataset(dataset['train'], label['train'])
     test_set = CustomDataset(dataset['test'], label['test'])
@@ -718,9 +698,6 @@ if __name__ == "__main__":
     classifier = SoftmaxClassifier(100, 2).to(device)
     model = StackedAutoencoder(AE1, AE2, classifier).to(device)
 
-    verbose = True
-    train_model = True
-    save_model = False
     if (train_model):
       AE1_epochs = 50
       optimizer_ae1 = optim.Adam( AE1.parameters(), lr=0.001, weight_decay=1e-4 )
@@ -767,7 +744,8 @@ if __name__ == "__main__":
         if verbose:
           print(f"AE 1: Epoch {epoch}, loss {loss.item()}, validation loss {val_loss}")
       
-      print("======================================\nTrained AE 1\n======================================")
+      if verbose:
+        print("======================================\nTrained AE 1\n======================================")
 
       encoded_dataset, encoded_dataset_loader = get_encoded_data(AE1, train_dataloader, params, device)
 
@@ -804,7 +782,8 @@ if __name__ == "__main__":
         if verbose:
           print(f"AE 2: Epoch {epoch}, loss {loss.item()}, validation loss {val_loss}")
 
-      print("======================================\nTrained AE 2\n======================================")
+      if verbose:
+        print("======================================\nTrained AE 2\n======================================")
 
       encoded_dataset, encoded_dataset_loader = get_encoded_data(AE2, encoded_dataset_loader, params, device)
 
@@ -847,7 +826,8 @@ if __name__ == "__main__":
         if verbose:
           print(f"Classifier: Epoch {epoch}, loss {loss.item()}, validation loss {val_loss}")
 
-      print("======================================\nTrained classifier\n======================================")
+      if verbose:
+        print("======================================\nTrained classifier\n======================================")
 
       optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
@@ -900,50 +880,49 @@ if __name__ == "__main__":
 
         if verbose:
           print(f"Model: Epoch {epoch}, loss {loss.item()}, validation loss {val_loss}")
-
-      print("======================================\nFine tuned model\n======================================")
-
-      dig, axs = plt.subplots(1, 5, figsize=(15,5))
-      
-      # Plot for AE1
-      axs[0].plot(range(AE1_epochs), loss_ae1, label='Training Loss')
-      axs[0].plot(range(AE1_epochs), val_ae1, label='Validation Loss')
-      axs[0].set_title('AE1 Loss')
-      axs[0].set_xlabel('Epoch')
-      axs[0].set_ylabel('Loss')
-      axs[0].legend()
-
-      # Plot for AE2
-      axs[1].plot(range(AE2_epochs), loss_ae2, label='Training Loss')
-      axs[1].plot(range(AE2_epochs), val_ae2, label='Validation Loss')
-      axs[1].set_title('AE2 Loss')
-      axs[1].set_xlabel('Epoch')
-      axs[1].legend()
-
-      # Plot for classifier
-      axs[2].plot(range(classifier_epochs), loss_classifier, label='Training Loss')
-      axs[2].plot(range(classifier_epochs), val_classifier, label='Validation Loss')
-      axs[2].set_title('Classifier Loss')
-      axs[2].set_xlabel('Epoch')
-      axs[2].legend()
-
-      # Plot for Model
-      axs[3].plot(range(fine_tuning_epochs), loss_model, label='Training Loss')
-      axs[3].plot(range(fine_tuning_epochs), val_model, label='Validation Loss')
-      axs[3].set_title('Model Loss')
-      axs[3].set_xlabel('Epoch')
-      axs[3].legend()
-
-      # Plot for Accuracy over fine tuning
-      axs[4].plot(range(fine_tuning_epochs), accuracy_model, label='Training Accuracy')
-      axs[4].plot(range(fine_tuning_epochs), val_accuracy_model, label='Validation Accuracy')
-      axs[4].set_title('Accuracy')
-      axs[4].set_xlabel('Epoch')
-      axs[4].legend()
-
-      plt.tight_layout()
       
       if verbose:
+        print("======================================\nFine tuned model\n======================================")
+
+        dig, axs = plt.subplots(1, 5, figsize=(15,5))
+        # Plot for AE1
+        axs[0].plot(range(AE1_epochs), loss_ae1, label='Training Loss')
+        axs[0].plot(range(AE1_epochs), val_ae1, label='Validation Loss')
+        axs[0].set_title('AE1 Loss')
+        axs[0].set_xlabel('Epoch')
+        axs[0].set_ylabel('Loss')
+        axs[0].legend()
+
+        # Plot for AE2
+        axs[1].plot(range(AE2_epochs), loss_ae2, label='Training Loss')
+        axs[1].plot(range(AE2_epochs), val_ae2, label='Validation Loss')
+        axs[1].set_title('AE2 Loss')
+        axs[1].set_xlabel('Epoch')
+        axs[1].legend()
+
+        # Plot for classifier
+        axs[2].plot(range(classifier_epochs), loss_classifier, label='Training Loss')
+        axs[2].plot(range(classifier_epochs), val_classifier, label='Validation Loss')
+        axs[2].set_title('Classifier Loss')
+        axs[2].set_xlabel('Epoch')
+        axs[2].legend()
+
+        # Plot for Model
+        axs[3].plot(range(fine_tuning_epochs), loss_model, label='Training Loss')
+        axs[3].plot(range(fine_tuning_epochs), val_model, label='Validation Loss')
+        axs[3].set_title('Model Loss')
+        axs[3].set_xlabel('Epoch')
+        axs[3].legend()
+
+        # Plot for Accuracy over fine tuning
+        axs[4].plot(range(fine_tuning_epochs), accuracy_model, label='Training Accuracy')
+        axs[4].plot(range(fine_tuning_epochs), val_accuracy_model, label='Validation Accuracy')
+        axs[4].set_title('Accuracy')
+        axs[4].set_xlabel('Epoch')
+        axs[4].legend()
+
+        plt.tight_layout()
+
         plt.show()
 
       if save_model:
@@ -951,7 +930,8 @@ if __name__ == "__main__":
     else:
       model.load_state_dict(torch.load(f'models/model_{pipeline}_step1.pth', map_location=torch.device(device)))
 
-    print("======================================\nTesting Model\n======================================")
+    if verbose:
+      print("======================================\nTesting Model\n======================================")
 
     model.eval()
 
@@ -987,69 +967,182 @@ if __name__ == "__main__":
     avg_FN.append(FN)
     avg_TN.append(TN)
 
-    accuracy = (TP + TN) / (TP + TN + FP + FN)
-    sensitivity = TP / (TP + FN) 
-    recall = TN / (TN + FP) 
-    precision = TP / (TP + FP)
-    f1 = (2 * precision * sensitivity) / (precision + sensitivity)
+    accuracy = safe_divide(TP + TN, TP + TN + FP + FN)
+    sensitivity = safe_divide(TP, TP + FN)
+    specificity = safe_divide(TN, TN + FP)
+    precision = safe_divide(TP, TP + FP)
+    
+    f1 = safe_divide((2 * precision * sensitivity), (precision + sensitivity))
     cm = np.array([[TP,FP],[FN,TN]])
 
-    print(f'Accuracy: {(accuracy * 100):.2f}%')
-    print(f'Recall: {recall:.2f}')
-    print(f'Precision: {precision:.2f}')
-    print(f'F1_Score: {f1:.2f}')
-    print(f'Confusion Matrix:\n{cm}')
+    if verbose:
+      print(f'Accuracy: {(accuracy * 100):.2f}%')
+      print(f'Specificity: {specificity:.2f}')
+      print(f'Precision: {precision:.2f}')
+      print(f'F1_Score: {f1:.2f}')
+      print(f'Confusion Matrix:\n{cm}')
   
-  print("======================================\nCompleted splits\n======================================")
+  if verbose:
+    print("======================================\nCompleted splits\n======================================")
   TP = sum(avg_TP)/len(avg_TP)
   FP = sum(avg_FP)/len(avg_FP)
   FN = sum(avg_FN)/len(avg_FN)
   TN = sum(avg_TN)/len(avg_TN)
 
-  accuracy = (TP + TN) / (TP + TN + FP + FN)
-  sensitivity = TP / (TP + FN) 
-  recall = TN / (TN + FP) 
-  precision = TP / (TP + FP)
-  f1 = (2 * precision * sensitivity) / (precision + sensitivity)
+  accuracy = safe_divide(TP + TN, TP + TN + FP + FN)
+  sensitivity = safe_divide(TP, TP + FN)
+  specificity = safe_divide(TN, TN + FP)
+  precision = safe_divide(TP, TP + FP)
+  
+  f1 = safe_divide((2 * precision * sensitivity), (precision + sensitivity))
   cm = np.array([[TP,FP],[FN,TN]])
 
   print(f'Accuracy: {(accuracy * 100):.2f}%')
-  print(f'Recall: {recall:.2f}')
+  print(f'Specificity: {specificity:.2f}')
   print(f'Precision: {precision:.2f}')
   print(f'F1_Score: {f1:.2f}')
   print(f'Confusion Matrix:\n{cm}')
 
-  N_rois = 50
+  return model, accuracy, train_dataloader, test_dataloader
 
-  rois_ig, weights_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
+def roar(data, labels, methods, percentiles):
+  method_accuracies = {}
 
-  rois_shap, weights_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
+  print('Random method')
 
-  rois_lime, weights_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
+  random_ranking = random.sample(range(1000), 1000)
+  random_accuracies = get_accuracy_of_model_over_percentiles(percentiles, data, labels, random_ranking, 'Random')
+  method_accuracies['Random'] = random_accuracies
 
-  rois_deeplift, weights_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
+  for method in methods:
+    accuracies = get_accuracy_of_model_over_percentiles(percentiles, data, labels, method[1], method[3])
 
-  rois_deepliftshap, weights_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
+    method_accuracies[method[3]] = accuracies
 
-  rois_gradientshap, weights_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
+  with open('method_accuracies.json', 'w') as f:
+    json.dump(method_accuracies, f)
 
-  rois_guidedbackprop, weights_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
+  return method_accuracies
+
+
+def get_accuracy_of_model_over_percentiles(percentiles, data, labels, feature_ranking, method):
+  accuracies = []
+
+  for percentile in percentiles:
+    print(f'======================================\nModel with {percentile*100}% data replaced using {method}\n======================================')
+
+    percentile_index = int(len(data) * percentile)
+    percentile_data = replace_features_with_0(data, feature_ranking[:percentile_index])
+
+    _, accuracy, _, _ = train_and_eval_model(percentile_data, labels, verbose=False, train_model=True, save_model=False)    
+
+    accuracies.append(accuracy)
+
+  return accuracies
+
+
+def replace_features_with_0(data, feature_indices_to_remove):
+  data[:, feature_indices_to_remove] = 0
+
+  return data
+
+
+if __name__ == "__main__":
+  # Set print options to display the whole array
+  # np.set_printoptions(threshold=np.inf)
+  print("Torch Cuda is Available =",use_cuda)
+  # seed = int(np.random.rand() * (2**32 - 1))
+  seed = 2109459083
+
+  verbose = True
+  train_model = False
+  save_model = False
+  analyze_methods = False
+
+  torch.manual_seed(seed)
+  np.random.seed(seed)
+  random.seed(seed)
+  if use_cuda:
+      torch.cuda.manual_seed_all(seed)
+
+  pipeline = 'ccs'
+
+  data, labels = get_data_from_abide(pipeline)
+  labels_from_abide = np.array(labels)
+  
+  #Convert labels from 1, 2 to 0, 1 for PyTorch compatibility
+  labels_from_abide = labels_from_abide - 1
+
+
+  # feature_vecs, feature_vec_indices = get_feature_vecs(data)j
+
+  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 1)
+
+  # np.savetxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', top_features, delimiter=",")
+  # np.savetxt(f'data/sorted_top_frois_{pipeline}_116_step1.csv', top_rois, delimiter=",")
+  
+  top_features = np.loadtxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
+  top_rois = np.loadtxt(f'data/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
+
+  model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, verbose=verbose, train_model=train_model, save_model=save_model)
+
+  N_rois = 1000
+
+  rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
+
+  rois_shap, weights_shap, indices_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
+
+  rois_lime, weights_lime, indices_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
+
+  rois_deeplift, weights_deeplift, indices_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
+
+  rois_deepliftshap, weights_deepliftshap, indices_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
+
+  rois_gradientshap, weights_gradientshap, indices_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
+
+  rois_guidedbackprop, weights_guidedbackprop, indices_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
 
   interpretation_results = [
-    (rois_shap, weights_shap, "SHAP"),
-    (rois_lime, weights_lime, "LIME"),
-    (rois_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
-    (rois_ig, weights_ig, "Integrated Gradients"),
-    (rois_deeplift, weights_deeplift, "DeepLift"),
-    (rois_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
-    (rois_gradientshap, weights_gradientshap, "GradientShap"),
+    (rois_shap, indices_shap, weights_shap, "SHAP"),
+    (rois_lime, indices_lime, weights_lime, "LIME"),
+    (rois_guidedbackprop, indices_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
+    (rois_ig, indices_ig, weights_ig, "Integrated Gradients"),
+    (rois_deeplift, indices_deeplift, weights_deeplift, "DeepLift"),
+    (rois_deepliftshap, indices_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
+    (rois_gradientshap, indices_gradientshap, weights_gradientshap, "GradientShap"),
   ]
 
   for i in interpretation_results:
-    print("=" * 65,f'\n{i[2]}\n' + ('=' * 65))
-    print(print_connections(i[0], i[1], i[2], pipeline).to_string(index=False))
-
-  print("Seed is",seed)
+    print("=" * 65,f'\n{i[3]}\n' + ('=' * 65))
+    print(print_connections(i[0], i[2], i[3], pipeline).to_string(index=False))
 
   if verbose:
     plt.show()
+
+  percentiles = [i/10 for i in range(1, 10, 1)]
+
+  if(analyze_methods):
+    accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
+  else:
+    f = open('method_accuracies.json', 'r')
+    accuracies = json.load(f)
+    f.close()
+
+  methods = list(accuracies.keys())
+  accuracies = list(accuracies.values())
+
+  percentiles = [0] + [i*100 for i in percentiles]
+
+  for method, accuracy in zip(methods,accuracies):
+    accuracy = [base_accuracy] + accuracy
+    plt.plot(percentiles, accuracy, label=method)
+
+  plt.legend()
+
+  plt.title('RoAR')
+  plt.xlabel('Percent of features removed')
+  plt.ylabel('Accuracy')
+
+  plt.show()
+
+  print("Seed is",seed)
