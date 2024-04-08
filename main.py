@@ -1049,13 +1049,13 @@ if __name__ == "__main__":
   rois_guidedbackprop, weights_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
 
   interpretation_results = [
-    (rois_ig, weights_ig, "Integrated Gradients"),
     (rois_shap, weights_shap, "SHAP"),
     (rois_lime, weights_lime, "LIME"),
+    (rois_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
+    (rois_ig, weights_ig, "Integrated Gradients"),
     (rois_deeplift, weights_deeplift, "DeepLift"),
     (rois_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
     (rois_gradientshap, weights_gradientshap, "GradientShap"),
-    (rois_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
   ]
 
   for i in interpretation_results:
