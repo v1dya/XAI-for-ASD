@@ -615,12 +615,17 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
   if show_now:
     plt.show()
 
+  # Open the JSON file for reading
+  with open('aal_roi_functions.json', 'r') as file:
+    # Parse the JSON file into a Python dictionary
+    ROI_functions = json.load(file)
+
   labels = np.array(atlas.labels)
   top_connections = labels[rois[:10]]
-  connections_with_weights = np.array([(connection[0], connection[1], np.round(weight, 2)) for connection, weight in zip(top_connections, weights)])
+  connections_with_weights = np.array([(connection[0], ROI_functions[connection[0]], connection[1], ROI_functions[connection[1]], np.round(weight, 2)) for connection, weight in zip(top_connections, weights)])
 
   # Convert the top connections to a DataFrame for nice formatting
-  top_connections_df = pd.DataFrame(connections_with_weights, columns=['ROI 1', 'ROI 2', 'Importance'])
+  top_connections_df = pd.DataFrame(connections_with_weights, columns=['ROI 1', 'ROI 1 function', 'ROI 2', 'ROI 2 function', 'Importance'])
 
   return top_connections_df
 
@@ -1019,9 +1024,6 @@ def roar(data, labels, methods, percentiles):
 
     method_accuracies[method[3]] = accuracies
 
-  with open('method_accuracies.json', 'w') as f:
-    json.dump(method_accuracies, f)
-
   return method_accuracies
 
 
@@ -1054,9 +1056,10 @@ if __name__ == "__main__":
   # seed = int(np.random.rand() * (2**32 - 1))
   seed = 2109459083
 
-  verbose = True
-  train_model = False
+  verbose = False
+  train_model = True
   save_model = False
+  interpretation_methods = True
   analyze_methods = False
 
   torch.manual_seed(seed)
@@ -1087,6 +1090,7 @@ if __name__ == "__main__":
   model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, verbose=verbose, train_model=train_model, save_model=save_model)
 
   N_rois = 1000
+  N_rois_to_display = 50
 
   rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
@@ -1103,28 +1107,31 @@ if __name__ == "__main__":
   rois_guidedbackprop, weights_guidedbackprop, indices_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
 
   interpretation_results = [
-    (rois_shap, indices_shap, weights_shap, "SHAP"),
-    (rois_lime, indices_lime, weights_lime, "LIME"),
-    (rois_guidedbackprop, indices_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
-    (rois_ig, indices_ig, weights_ig, "Integrated Gradients"),
-    (rois_deeplift, indices_deeplift, weights_deeplift, "DeepLift"),
-    (rois_deepliftshap, indices_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
-    (rois_gradientshap, indices_gradientshap, weights_gradientshap, "GradientShap"),
+    (rois_shap[:N_rois_to_display], indices_shap, weights_shap[:N_rois_to_display], "SHAP"),
+    (rois_lime[:N_rois_to_display], indices_lime, weights_lime[:N_rois_to_display], "LIME"),
+    (rois_guidedbackprop[:N_rois_to_display], indices_guidedbackprop, weights_guidedbackprop[:N_rois_to_display], "GuidedBackprop"),
+    (rois_ig[:N_rois_to_display], indices_ig, weights_ig[:N_rois_to_display], "Integrated Gradients"),
+    (rois_deeplift[:N_rois_to_display], indices_deeplift, weights_deeplift[:N_rois_to_display], "DeepLift"),
+    (rois_deepliftshap[:N_rois_to_display], indices_deepliftshap, weights_deepliftshap[:N_rois_to_display], "DeepLiftShap"),
+    (rois_gradientshap[:N_rois_to_display], indices_gradientshap, weights_gradientshap[:N_rois_to_display], "GradientShap"),
   ]
 
-  for i in interpretation_results:
-    print("=" * 65,f'\n{i[3]}\n' + ('=' * 65))
-    print(print_connections(i[0], i[2], i[3], pipeline).to_string(index=False))
+  if interpretation_methods:
+    for i in interpretation_results:
+      print("=" * 115,f'\n{i[3]}\n' + ('=' * 115))
+      print(print_connections(i[0], i[2], i[3], pipeline).to_string(index=False))
 
-  if verbose:
     plt.show()
 
   percentiles = [i/10 for i in range(1, 10, 1)]
 
   if(analyze_methods):
     accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
+
+    with open(f'roar_accuracies_{pipeline}.json', 'w') as f:
+      json.dump(accuracies, f)
   else:
-    f = open('method_accuracies.json', 'r')
+    f = open(f'roar_accuracies_{pipeline}.json', 'r')
     accuracies = json.load(f)
     f.close()
 
@@ -1135,12 +1142,14 @@ if __name__ == "__main__":
 
   for method, accuracy in zip(methods,accuracies):
     accuracy = [base_accuracy] + accuracy
-    plt.plot(percentiles, accuracy, label=method)
+    method_accuracies = [i*100 for i in accuracy]
+    plt.plot(percentiles, method_accuracies, label=method)
 
   plt.legend()
 
   plt.title('RoAR')
   plt.xlabel('Percent of features removed')
+  plt.xticks(percentiles)
   plt.ylabel('Accuracy')
 
   plt.show()
