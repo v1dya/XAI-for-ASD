@@ -1,0 +1,98 @@
+================================================================================================ 
+SHAP
+================================================================================================
+               ROI 1        ROI 1 function              ROI 2       ROI 2 function Importance
+ Temporal_Pole_Sup_R  Emotional processing    Rolandic_Oper_L  Sensory integration       10.0
+      Cingulum_Ant_R       Decision making  Frontal_Mid_Orb_R   Emotion regulation       7.97
+            Rectus_R     Emotion formation  Frontal_Mid_Orb_L   Emotion regulation       7.62
+   Cerebelum_Crus1_R    Cognitive function     Temporal_Inf_R  Auditory processing       6.94
+Frontal_Sup_Medial_L     Attention control Frontal_Inf_Oper_L    Speech production       5.27
+       Frontal_Mid_L      Planning actions      Frontal_Sup_R High-level cognition       4.81
+      Cerebelum_10_R Cerebellar processing  ParaHippocampal_R      Memory encoding       4.76
+      Temporal_Inf_R   Auditory processing          Lingual_L    Visual processing       3.94
+       Cerebelum_8_L         Sensory motor     Cerebelum_7b_R       Motor learning       3.41
+      Temporal_Mid_R   Auditory processing         Thalamus_R        Sensory relay       3.17
+================================================================================================ 
+LIME
+================================================================================================
+              ROI 1      ROI 1 function             ROI 2         ROI 2 function Importance
+     Temporal_Mid_R Auditory processing          Cuneus_L      Visual perception       10.0
+        Calcarine_R   Visual processing          Rectus_L      Emotion formation       9.34
+     Cerebelum_7b_L      Motor learning          Heschl_L    Auditory processing       9.03
+Temporal_Pole_Mid_R     Social emotions    Cingulum_Ant_L        Decision making       8.96
+     Temporal_Inf_R Auditory processing         Lingual_L      Visual processing       8.25
+        Olfactory_L    Smell perception Frontal_Inf_Orb_R   Cognitive processing       7.59
+           Rectus_L   Emotion formation Frontal_Mid_Orb_L     Emotion regulation        6.9
+     Temporal_Mid_R Auditory processing        Thalamus_R          Sensory relay       6.14
+      Frontal_Mid_R    Planning actions Frontal_Sup_Orb_R Personality expression        5.7
+         Vermis_4_5   Cerebellar output   Occipital_Mid_R      Visual perception       5.68
+================================================================================================ 
+GuidedBackprop
+================================================================================================
+              ROI 1        ROI 1 function             ROI 2          ROI 2 function Importance
+     Cerebelum_10_R Cerebellar processing    Parietal_Inf_R  Perception integration       10.0
+     Temporal_Mid_R   Auditory processing        Pallidum_L      Movement execution       9.44
+     Cerebelum_10_R Cerebellar processing Frontal_Mid_Orb_R      Emotion regulation       8.08
+          Vermis_10  Emotional processing   Rolandic_Oper_R     Sensory integration       8.01
+      Cerebelum_3_R   Cerebellar function   Occipital_Inf_R      Visual integration        7.2
+     Temporal_Inf_R   Auditory processing         Angular_L        Complex language       7.08
+     Temporal_Inf_L   Auditory processing       Precuneus_L Visuospatial processing       6.98
+          Vermis_10  Emotional processing    Parietal_Sup_L     Spatial orientation       6.91
+Temporal_Pole_Sup_R  Emotional processing         Caudate_L                Learning       6.81
+     Temporal_Mid_R   Auditory processing     Frontal_Sup_L    High-level cognition       6.77
+================================================================================================ 
+Integrated Gradients
+================================================================================================
+               ROI 1          ROI 1 function             ROI 2       ROI 2 function Importance
+       Frontal_Mid_L        Planning actions     Frontal_Sup_L High-level cognition       10.0
+            Cuneus_L       Visual perception       Calcarine_L    Visual processing       9.88
+     Occipital_Sup_R       Visual perception       Calcarine_L    Visual processing       8.55
+            Cuneus_R       Visual perception       Calcarine_R    Visual processing       6.97
+            Rectus_R       Emotion formation Frontal_Med_Orb_L  Behavioral impulses        6.5
+       Cerebelum_8_L           Sensory motor    Cerebelum_7b_R       Motor learning       6.32
+          Vermis_1_2 Cerebellar coordination     Cerebelum_3_R  Cerebellar function       5.71
+            Heschl_R     Auditory processing          Heschl_L  Auditory processing        5.4
+            Cuneus_L       Visual perception       Calcarine_R    Visual processing       5.17
+Frontal_Sup_Medial_R       Attention control     Frontal_Sup_R High-level cognition        4.7
+================================================================================================ 
+DeepLift
+================================================================================================
+               ROI 1          ROI 1 function             ROI 2       ROI 2 function Importance
+       Frontal_Mid_L        Planning actions     Frontal_Sup_L High-level cognition       10.0
+            Cuneus_L       Visual perception       Calcarine_L    Visual processing       9.88
+     Occipital_Sup_R       Visual perception       Calcarine_L    Visual processing       8.55
+            Cuneus_R       Visual perception       Calcarine_R    Visual processing       6.97
+            Rectus_R       Emotion formation Frontal_Med_Orb_L  Behavioral impulses        6.5
+       Cerebelum_8_L           Sensory motor    Cerebelum_7b_R       Motor learning       6.32
+          Vermis_1_2 Cerebellar coordination     Cerebelum_3_R  Cerebellar function       5.71
+            Heschl_R     Auditory processing          Heschl_L  Auditory processing        5.4
+            Cuneus_L       Visual perception       Calcarine_R    Visual processing       5.17
+Frontal_Sup_Medial_R       Attention control     Frontal_Sup_R High-level cognition        4.7
+================================================================================================ 
+DeepLiftShap
+================================================================================================
+               ROI 1          ROI 1 function             ROI 2       ROI 2 function Importance
+       Frontal_Mid_L        Planning actions     Frontal_Sup_L High-level cognition       10.0
+            Cuneus_L       Visual perception       Calcarine_L    Visual processing       9.88
+     Occipital_Sup_R       Visual perception       Calcarine_L    Visual processing       8.55
+            Cuneus_R       Visual perception       Calcarine_R    Visual processing       6.97
+            Rectus_R       Emotion formation Frontal_Med_Orb_L  Behavioral impulses        6.5
+       Cerebelum_8_L           Sensory motor    Cerebelum_7b_R       Motor learning       6.32
+          Vermis_1_2 Cerebellar coordination     Cerebelum_3_R  Cerebellar function       5.71
+            Heschl_R     Auditory processing          Heschl_L  Auditory processing        5.4
+            Cuneus_L       Visual perception       Calcarine_R    Visual processing       5.17
+Frontal_Sup_Medial_R       Attention control     Frontal_Sup_R High-level cognition        4.7
+================================================================================================ 
+GradientShap
+================================================================================================
+               ROI 1          ROI 1 function             ROI 2       ROI 2 function Importance
+       Frontal_Mid_L        Planning actions     Frontal_Sup_L High-level cognition       10.0
+            Cuneus_L       Visual perception       Calcarine_L    Visual processing       9.88
+     Occipital_Sup_R       Visual perception       Calcarine_L    Visual processing       8.55
+            Cuneus_R       Visual perception       Calcarine_R    Visual processing       6.97
+            Rectus_R       Emotion formation Frontal_Med_Orb_L  Behavioral impulses        6.5
+       Cerebelum_8_L           Sensory motor    Cerebelum_7b_R       Motor learning       6.32
+          Vermis_1_2 Cerebellar coordination     Cerebelum_3_R  Cerebellar function       5.71
+            Heschl_R     Auditory processing          Heschl_L  Auditory processing        5.4
+            Cuneus_L       Visual perception       Calcarine_R    Visual processing       5.17
+Frontal_Sup_Medial_R       Attention control     Frontal_Sup_R High-level cognition        4.7
