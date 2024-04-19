@@ -1077,7 +1077,7 @@ if __name__ == "__main__":
   labels_from_abide = labels_from_abide - 1
 
 
-  # feature_vecs, feature_vec_indices = get_feature_vecs(data)j
+  # feature_vecs, feature_vec_indices = get_feature_vecs(data)
 
   # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 1)
 
