@@ -1,3 +1,4 @@
+import argparse
 import json
 import random
 import shap
@@ -1050,17 +1051,26 @@ def replace_features_with_0(data, feature_indices_to_remove):
 
 
 if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='Process control flags.')
+  parser.add_argument('--verbose', type=lambda x: (str(x).lower() == 'true'), default=False, help='Verbose output')
+  parser.add_argument('--train_model', type=lambda x: (str(x).lower() == 'true'), default=True, help='Train model')
+  parser.add_argument('--save_model', type=lambda x: (str(x).lower() == 'true'), default=False, help='Save the trained model')
+  parser.add_argument('--interpretation_methods', type=lambda x: (str(x).lower() == 'true'), default=True, help='Use interpretation methods')
+  parser.add_argument('--analyze_methods', type=lambda x: (str(x).lower() == 'true'), default=False, help='Analyze interpretation methods')
+
+  args = parser.parse_args()
+
+  verbose = args.verbose
+  train_model = args.train_model
+  save_model = args.save_model
+  interpretation_methods = args.interpretation_methods
+  analyze_methods = args.analyze_methods
+
   # Set print options to display the whole array
   # np.set_printoptions(threshold=np.inf)
   print("Torch Cuda is Available =",use_cuda)
   # seed = int(np.random.rand() * (2**32 - 1))
   seed = 2109459083
-
-  verbose = False
-  train_model = True
-  save_model = False
-  interpretation_methods = True
-  analyze_methods = False
 
   torch.manual_seed(seed)
   np.random.seed(seed)
@@ -1077,7 +1087,7 @@ if __name__ == "__main__":
   labels_from_abide = labels_from_abide - 1
 
 
-  # feature_vecs, feature_vec_indices = get_feature_vecs(data)j
+  # feature_vecs, feature_vec_indices = get_feature_vecs(data)
 
   # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 1)
 
