@@ -28,7 +28,7 @@ The main objectives of this research project are:
 |Quality of Results|The results may not be as conclusive or clear as originally thought which could affect the paper's chances for a publication.|Repeat experiments and maintain high standard of methodology. Double check everything|
 
 #### Proposed Gantt Chart
-![Gantt chart (1)](https://github.com/v1dya/COMP3000/assets/55044178/0cf74bf7-65e9-4d0a-9684-30b80393dfb6)
+![image](https://github.com/v1dya/COMP3000/assets/55044178/11e1fdf0-3dcb-4957-9859-56dd5c3d2b25)
 #### Tasks:
 1. Literature Review:
 	- Understand current methodologies and findings in ASD diagnosis using ML and the applications of ROAR by conducting a literature review
