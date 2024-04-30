@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import os
 import pdb
+import seaborn as sns
 from sklearn.svm import SVC
 from sklearn.feature_selection import RFE
 from sklearn.model_selection import train_test_split, StratifiedKFold
@@ -124,7 +125,7 @@ def safe_divide(numerator, denominator):
   
 
 class Autoencoder(nn.Module):
-  def __init__(self, input_size, encoded_output_size, criterion=nn.MSELoss()):
+  def __init__(self, input_size, encoded_output_size, rho=0.2, beta=2, criterion=nn.MSELoss()):
     """
     rho: desired sparsity parameter
     beta: weight of the KL divergence term
@@ -133,18 +134,30 @@ class Autoencoder(nn.Module):
 
     self.encoder = nn.Linear(input_size, encoded_output_size)
     self.decoder = nn.Linear(encoded_output_size, input_size)
+    self.rho = rho
+    self.beta = beta
     self.criterion = criterion
+  
+  def kl_divergence(self, rho, rho_hat):
+    """Calculates KL divergence for regularization."""
+    return rho * torch.log(rho / rho_hat) + (1 - rho) * torch.log((1 - rho) / (1 - rho_hat)) 
   
   def forward(self, x):
     encoded = torch.relu(self.encoder(x))
 
+    # Compute average activation of hidden neurons
+    rho_hat = torch.mean(encoded, dim=0) 
+
+    kl_loss = self.kl_divergence(self.rho, rho_hat).sum()
+
     decoded = self.decoder(encoded)
 
+    # Total loss: Reconstruction loss + KL divergence
     mse_loss = self.criterion(decoded, x)
-    loss = mse_loss
+    loss = mse_loss + self.beta * kl_loss 
 
     return encoded, decoded, loss
-  
+
 class SoftmaxClassifier(nn.Module):
   def __init__(self, input_size, num_classes):
     super(SoftmaxClassifier, self).__init__()
@@ -711,13 +724,15 @@ def train_and_eval_model(top_features, labels_from_abide, verbose=False, train_m
       AE2_epochs = 50
       optimizer_ae2 = optim.Adam( AE2.parameters(), lr=0.001, weight_decay=1e-4 )
 
-      classifier_epochs = 100
+      classifier_epochs = 300
       optimizer_classifier = optim.Adam( classifier.parameters(), lr=0.001, weight_decay=1e-4 )
+
+      optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
       ae_criterion = nn.MSELoss()
       classifier_criterion = nn.CrossEntropyLoss()
 
-      fine_tuning_epochs = 50
+      fine_tuning_epochs = 125
 
       loss_ae1 = []
       val_ae1 = []
@@ -834,8 +849,6 @@ def train_and_eval_model(top_features, labels_from_abide, verbose=False, train_m
 
       if verbose:
         print("======================================\nTrained classifier\n======================================")
-
-      optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
       loss_model = []
       accuracy_model = []
@@ -987,6 +1000,14 @@ def train_and_eval_model(top_features, labels_from_abide, verbose=False, train_m
       print(f'Precision: {precision:.2f}')
       print(f'F1_Score: {f1:.2f}')
       print(f'Confusion Matrix:\n{cm}')
+      sns.heatmap(cm, annot=True)
+
+      group_names = ['True Pos','False Pos','False Neg','True Neg']
+      group_counts = ['{0:0.0f}'.format(value) for value in cm.flatten()]
+      group_percentages = ['{0:.2%}'.format(value) for value in cm.flatten()/np.sum(cm)]
+      labels = [f'{v1}\n{v2}\n{v3}' for v1, v2, v3 in zip(group_names,group_counts,group_percentages)]
+      labels = np.asarray(labels).reshape(2,2)
+      sns.heatmap(cm, annot=labels, fmt='', cmap='Blues')
   
   if verbose:
     print("======================================\nCompleted splits\n======================================")
@@ -1066,6 +1087,12 @@ if __name__ == "__main__":
   interpretation_methods = args.interpretation_methods
   analyze_methods = args.analyze_methods
 
+  print("Verbose: ", verbose)
+  print("train_model: ", train_model)
+  print("save_model: ", save_model)
+  print("interpretation_methods: ", interpretation_methods)
+  print("analyze_methods: ", analyze_methods)
+
   # Set print options to display the whole array
   # np.set_printoptions(threshold=np.inf)
   print("Torch Cuda is Available =",use_cuda)
@@ -1133,35 +1160,39 @@ if __name__ == "__main__":
 
     plt.show()
 
-  percentiles = [i/10 for i in range(1, 10, 1)]
-
   if(analyze_methods):
+    percentiles = [0.1, 0.3, 0.5, 0.7, 0.9]
+
     accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
 
+    # If you want to show already computed values
+    # f = open(f'roar_accuracies_{pipeline}.json', 'r')
+    # accuracies = json.load(f)
+    # f.close()
+
+    # If you want to save the newly computed values
     with open(f'roar_accuracies_{pipeline}.json', 'w') as f:
       json.dump(accuracies, f)
-  else:
-    f = open(f'roar_accuracies_{pipeline}.json', 'r')
-    accuracies = json.load(f)
-    f.close()
 
-  methods = list(accuracies.keys())
-  accuracies = list(accuracies.values())
+    methods = list(accuracies.keys())
+    accuracies = list(accuracies.values())
 
-  percentiles = [0] + [i*100 for i in percentiles]
+    percentiles = [0] + [i*100 for i in percentiles]
 
-  for method, accuracy in zip(methods,accuracies):
-    accuracy = [base_accuracy] + accuracy
-    method_accuracies = [i*100 for i in accuracy]
-    plt.plot(percentiles, method_accuracies, label=method)
+    for method, accuracy in zip(methods,accuracies):
+      accuracy = [base_accuracy] + accuracy
+      method_accuracies = [i*100 for i in accuracy]
+      plt.plot(percentiles, method_accuracies, label=method)
 
-  plt.legend()
+    xticks = [ i for i in range(0, 101, 5)]
 
-  plt.title('RoAR')
-  plt.xlabel('Percent of features removed')
-  plt.xticks(percentiles)
-  plt.ylabel('Accuracy')
+    plt.legend()
 
-  plt.show()
+    plt.title('RoAR')
+    plt.xlabel('Percent of features removed')
+    plt.xticks(percentiles)
+    plt.ylabel('Accuracy')
+
+    plt.show()
 
   print("Seed is",seed)
