@@ -1163,52 +1163,31 @@ if __name__ == "__main__":
   percentiles = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
 
   if(analyze_methods):
-    percentiles = [0.1, 0.3, 0.5, 0.7, 0.9]
-
     accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
 
-    # If you want to show already computed values
-    # f = open(f'roar_accuracies_{pipeline}.json', 'r')
-    # accuracies = json.load(f)
-    # f.close()
-
-    # If you want to save the newly computed values
     with open(f'roar_accuracies_{pipeline}.json', 'w') as f:
       json.dump(accuracies, f)
+  else:
+    with open(f'roar_accuracies_{pipeline}.json') as f:
+      accuracies = json.load(f)
 
-    methods = list(accuracies.keys())
-    accuracies = list(accuracies.values())
+  methods = list(accuracies.keys())
+  accuracies = list(accuracies.values())
 
-    percentiles = [0] + [i*100 for i in percentiles]
+  percentiles = [0] + [i*100 for i in percentiles]
 
   for method, accuracy in zip(methods,accuracies):
     accuracy = [base_accuracy] + accuracy
     method_accuracies = [i*100 for i in accuracy]
-    plt.plot(percentiles[:4], method_accuracies[:4], label=method)
+    plt.plot(percentiles, method_accuracies, label=method)
 
   plt.legend()
-
-  plt.title('ROAR zoomed in')
-  plt.xlabel('Percent of features removed')
-  plt.xticks(percentiles[:4])
-  plt.ylabel('Accuracy')
-
-  plt.show()
-
-    for method, accuracy in zip(methods,accuracies):
-      accuracy = [base_accuracy] + accuracy
-      method_accuracies = [i*100 for i in accuracy]
-      plt.plot(percentiles, method_accuracies, label=method)
-
-    xticks = [ i for i in range(0, 101, 5)]
-
-    plt.legend()
 
   plt.title('ROAR')
   plt.xlabel('Percent of features removed')
   plt.xticks(percentiles)
   plt.ylabel('Accuracy')
 
-    plt.show()
+  plt.show()
 
   print("Seed is",seed)
