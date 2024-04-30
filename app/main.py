@@ -1035,8 +1035,6 @@ def train_and_eval_model(top_features, labels_from_abide, verbose=False, train_m
 def roar(data, labels, methods, percentiles):
   method_accuracies = {}
 
-  print('Random method')
-
   random_ranking = random.sample(range(1000), 1000)
   random_accuracies = get_accuracy_of_model_over_percentiles(percentiles, data, labels, random_ranking, 'Random')
   method_accuracies['Random'] = random_accuracies
@@ -1045,7 +1043,6 @@ def roar(data, labels, methods, percentiles):
     accuracies = get_accuracy_of_model_over_percentiles(percentiles, data, labels, method[1], method[3])
 
     method_accuracies[method[3]] = accuracies
-
   return method_accuracies
 
 
@@ -1055,8 +1052,10 @@ def get_accuracy_of_model_over_percentiles(percentiles, data, labels, feature_ra
   for percentile in percentiles:
     print(f'======================================\nModel with {percentile*100}% data replaced using {method}\n======================================')
 
-    percentile_index = int(len(data) * percentile)
-    percentile_data = replace_features_with_0(data, feature_ranking[:percentile_index])
+    data_copy = np.copy(data)
+
+    percentile_index = int(len(feature_ranking) * percentile)
+    percentile_data = replace_features_with_0(data_copy, feature_ranking[:percentile_index])
 
     _, accuracy, _, _ = train_and_eval_model(percentile_data, labels, verbose=False, train_model=True, save_model=False)    
 
@@ -1087,7 +1086,7 @@ if __name__ == "__main__":
   interpretation_methods = args.interpretation_methods
   analyze_methods = args.analyze_methods
 
-  print("Verbose: ", verbose)
+  print("verbose: ", verbose)
   print("train_model: ", train_model)
   print("save_model: ", save_model)
   print("interpretation_methods: ", interpretation_methods)
@@ -1144,10 +1143,11 @@ if __name__ == "__main__":
   rois_guidedbackprop, weights_guidedbackprop, indices_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
 
   interpretation_results = [
+    (rois_ig[:N_rois_to_display], indices_ig, weights_ig[:N_rois_to_display], "Integrated Gradients"),
     (rois_shap[:N_rois_to_display], indices_shap, weights_shap[:N_rois_to_display], "SHAP"),
     (rois_lime[:N_rois_to_display], indices_lime, weights_lime[:N_rois_to_display], "LIME"),
     (rois_guidedbackprop[:N_rois_to_display], indices_guidedbackprop, weights_guidedbackprop[:N_rois_to_display], "GuidedBackprop"),
-    (rois_ig[:N_rois_to_display], indices_ig, weights_ig[:N_rois_to_display], "Integrated Gradients"),
+
     (rois_deeplift[:N_rois_to_display], indices_deeplift, weights_deeplift[:N_rois_to_display], "DeepLift"),
     (rois_deepliftshap[:N_rois_to_display], indices_deepliftshap, weights_deepliftshap[:N_rois_to_display], "DeepLiftShap"),
     (rois_gradientshap[:N_rois_to_display], indices_gradientshap, weights_gradientshap[:N_rois_to_display], "GradientShap"),
@@ -1160,39 +1160,34 @@ if __name__ == "__main__":
 
     plt.show()
 
-  if(analyze_methods):
-    percentiles = [0.1, 0.3, 0.5, 0.7, 0.9]
+  percentiles = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
 
+  if(analyze_methods):
     accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
 
-    # If you want to show already computed values
-    # f = open(f'roar_accuracies_{pipeline}.json', 'r')
-    # accuracies = json.load(f)
-    # f.close()
-
-    # If you want to save the newly computed values
     with open(f'roar_accuracies_{pipeline}.json', 'w') as f:
       json.dump(accuracies, f)
+  else:
+    with open(f'roar_accuracies_{pipeline}.json') as f:
+      accuracies = json.load(f)
 
-    methods = list(accuracies.keys())
-    accuracies = list(accuracies.values())
+  methods = list(accuracies.keys())
+  accuracies = list(accuracies.values())
 
-    percentiles = [0] + [i*100 for i in percentiles]
+  percentiles = [0] + [i*100 for i in percentiles]
 
-    for method, accuracy in zip(methods,accuracies):
-      accuracy = [base_accuracy] + accuracy
-      method_accuracies = [i*100 for i in accuracy]
-      plt.plot(percentiles, method_accuracies, label=method)
+  for method, accuracy in zip(methods,accuracies):
+    accuracy = [base_accuracy] + accuracy
+    method_accuracies = [i*100 for i in accuracy]
+    plt.plot(percentiles, method_accuracies, label=method)
 
-    xticks = [ i for i in range(0, 101, 5)]
+  plt.legend()
 
-    plt.legend()
+  plt.title('ROAR')
+  plt.xlabel('Percent of features removed')
+  plt.xticks(percentiles)
+  plt.ylabel('Accuracy')
 
-    plt.title('RoAR')
-    plt.xlabel('Percent of features removed')
-    plt.xticks(percentiles)
-    plt.ylabel('Accuracy')
-
-    plt.show()
+  plt.show()
 
   print("Seed is",seed)
