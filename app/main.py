@@ -1000,14 +1000,14 @@ def train_and_eval_model(top_features, labels_from_abide, verbose=False, train_m
       print(f'Precision: {precision:.2f}')
       print(f'F1_Score: {f1:.2f}')
       print(f'Confusion Matrix:\n{cm}')
-      sns.heatmap(cm, annot=True)
+      # sns.heatmap(cm, annot=True)
 
-      group_names = ['True Pos','False Pos','False Neg','True Neg']
-      group_counts = ['{0:0.0f}'.format(value) for value in cm.flatten()]
-      group_percentages = ['{0:.2%}'.format(value) for value in cm.flatten()/np.sum(cm)]
-      labels = [f'{v1}\n{v2}\n{v3}' for v1, v2, v3 in zip(group_names,group_counts,group_percentages)]
-      labels = np.asarray(labels).reshape(2,2)
-      sns.heatmap(cm, annot=labels, fmt='', cmap='Blues')
+      # group_names = ['True Pos','False Pos','False Neg','True Neg']
+      # group_counts = ['{0:0.0f}'.format(value) for value in cm.flatten()]
+      # group_percentages = ['{0:.2%}'.format(value) for value in cm.flatten()/np.sum(cm)]
+      # labels = [f'{v1}\n{v2}\n{v3}' for v1, v2, v3 in zip(group_names,group_counts,group_percentages)]
+      # labels = np.asarray(labels).reshape(2,2)
+      # sns.heatmap(cm, annot=labels, fmt='', cmap='Blues')
   
   if verbose:
     print("======================================\nCompleted splits\n======================================")
@@ -1104,7 +1104,7 @@ if __name__ == "__main__":
   if use_cuda:
       torch.cuda.manual_seed_all(seed)
 
-  pipeline = 'ccs'
+  pipeline = 'cpac'
 
   data, labels = get_data_from_abide(pipeline)
   labels_from_abide = np.array(labels)
@@ -1117,11 +1117,11 @@ if __name__ == "__main__":
 
   # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, 1)
 
-  # np.savetxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', top_features, delimiter=",")
-  # np.savetxt(f'data/sorted_top_frois_{pipeline}_116_step1.csv', top_rois, delimiter=",")
+  # np.savetxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step1.csv', top_features, delimiter=",")
+  # np.savetxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step1.csv', top_rois, delimiter=",")
   
-  top_features = np.loadtxt(f'data/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
-  top_rois = np.loadtxt(f'data/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
+  top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
+  top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
 
   model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, verbose=verbose, train_model=train_model, save_model=save_model)
 
