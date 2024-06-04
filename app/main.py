@@ -25,6 +25,7 @@ from captum.attr import IntegratedGradients, DeepLiftShap, DeepLift, GradientSha
 from nilearn import datasets, plotting
 import networkx as nx
 from lime import lime_tabular
+from functools import reduce
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
@@ -528,7 +529,7 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
   ax_roi_colorbar = fig.add_axes([0.85, 0.05, 0.05, 0.40])
 
   # Set the figure-wide title
-  fig.suptitle(f'Top {num_connections} connections and ROI Importance using {method}', fontsize=16)
+  fig.suptitle(f'Top {num_connections} connections and ROI Importance using {method} for {pipeline}', fontsize=16)
 
 
   G = nx.Graph()
@@ -623,7 +624,7 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
   cb.set_label('Importance')
 
   if save:
-    filename = f"{pipeline}_plot_{method}_{num_connections}_connections.png"
+    filename = f"plots/{pipeline}/{pipeline}_plot_{method}_{num_connections}_connections.png"
     plt.savefig(filename)
 
   if show_now:
@@ -635,7 +636,7 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
     ROI_functions = json.load(file)
 
   labels = np.array(atlas.labels)
-  top_connections = labels[rois[:10]]
+  top_connections = labels[rois[:100]]
   connections_with_weights = np.array([(connection[0], ROI_functions[connection[0]], connection[1], ROI_functions[connection[1]], np.round(weight, 2)) for connection, weight in zip(top_connections, weights)])
 
   # Convert the top connections to a DataFrame for nice formatting
@@ -653,7 +654,7 @@ def model_predict_lime(data):
 
   return probabilities
 
-def train_and_eval_model(top_features, labels_from_abide, verbose=False, train_model=True, save_model=False):
+def train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=False, train_model=True, save_model=False):
   skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)  # Example with 5 folds
 
   avg_TP, avg_FP, avg_FN, avg_TN = [], [], [], []
@@ -1069,6 +1070,45 @@ def replace_features_with_0(data, feature_indices_to_remove):
 
   return data
 
+def compare_models_in_different_pipelines():
+  pipelines = ['cpac', 'dparsf', 'niak', 'ccs']
+
+  top_connections = []
+
+  for pipeline in pipelines:
+    data, labels = get_data_from_abide(pipeline)
+    labels_from_abide = np.array(labels)
+    
+    #Convert labels from 1, 2 to 0, 1 for PyTorch compatibility
+    labels_from_abide = labels_from_abide - 1
+    top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
+    top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
+
+    model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=False, train_model=False, save_model=False)
+
+    N_rois = 1000
+    N_rois_to_compare = 50
+
+    rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
+
+    top_conns = print_connections(rois_ig, weights_ig, "Integrated Gradients", pipeline)
+    
+    top_connections.append(top_conns[['ROI 1','ROI 2']])
+
+
+
+  common_pairs = reduce(lambda left, right: pd.merge(left, right, on=['ROI 1', 'ROI 2']), top_connections)
+
+  all_data = pd.concat(top_connections)
+  roi_counts = pd.concat([all_data['ROI 1'], all_data['ROI 2']]).value_counts()
+
+
+  pdb.set_trace()
+
+  return top_connections
+
+
+
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Process control flags.')
@@ -1123,7 +1163,7 @@ if __name__ == "__main__":
   top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
   top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
 
-  model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, verbose=verbose, train_model=train_model, save_model=save_model)
+  model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=verbose, train_model=train_model, save_model=save_model)
 
   N_rois = 1000
   N_rois_to_display = 50
