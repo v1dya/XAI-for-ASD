@@ -511,13 +511,15 @@ def expand_relative_coords(coordinates, percent):
   return spread_coordinates
 
 
-def print_connections(rois, weights, method, pipeline, show_now=False, save=False):
-  atlas = datasets.fetch_atlas_aal(version='SPM5')
+def print_connections(rois, weights, method, pipeline, top_regions=50, top_regions_df=10, show_now=False, save=False, print_graph=True):
+  atlas = datasets.fetch_atlas_aal(version='SPM12')
   labels = atlas.labels  # List of AAL region labels
   weights = np.array(weights)
-  rois = rois.astype(int)
+  rois = rois.astype(int)[:top_regions]
 
   weights = ((weights - weights.min()) / (weights.max() - weights.min())) * 10
+
+  weights = weights[:top_regions]
 
   edge_cmap = colormaps['viridis']  # Colormap choice 
 
@@ -525,15 +527,16 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
 
   cmap = colormaps['viridis']
 
-  fig = plt.figure(figsize=(15, 8))
-  ax_connection_connectome = fig.add_axes([0.05, 0.55, 0.8, 0.40])
-  ax_connection_colorbar = fig.add_axes([0.85, 0.55, 0.05, 0.40])
+  if print_graph:
+    fig = plt.figure(figsize=(15, 8))
+    ax_connection_connectome = fig.add_axes([0.05, 0.55, 0.8, 0.40])
+    ax_connection_colorbar = fig.add_axes([0.85, 0.55, 0.05, 0.40])
 
-  ax_roi_connectome = fig.add_axes([0.05, 0.05, 0.8, 0.40])
-  ax_roi_colorbar = fig.add_axes([0.85, 0.05, 0.05, 0.40])
+    ax_roi_connectome = fig.add_axes([0.05, 0.05, 0.8, 0.40])
+    ax_roi_colorbar = fig.add_axes([0.85, 0.05, 0.05, 0.40])
 
-  # Set the figure-wide title
-  fig.suptitle(f'Top {num_connections} connections and ROI Importance using {method} for {pipeline}', fontsize=16)
+    # Set the figure-wide title
+    fig.suptitle(f'Top {num_connections} connections and ROI Importance using {method} for {pipeline}', fontsize=16)
 
 
   G = nx.Graph()
@@ -560,20 +563,21 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
   # Dynamic Thresholding
   edge_threshold = get_threshold_from_percentile(adjacency_matrix, 0)  # Show all 
 
-  plotting.plot_connectome(adjacency_matrix, coordinates,
-                          node_color=node_color,
-                          edge_vmin=0,
-                          edge_vmax=weights.max(),
-                          edge_cmap=edge_cmap,
-                          edge_threshold=edge_threshold,
-                          axes=ax_connection_connectome)
+  if print_graph:
+    plotting.plot_connectome(adjacency_matrix, coordinates,
+                            node_color=node_color,
+                            edge_vmin=0,
+                            edge_vmax=weights.max(),
+                            edge_cmap=edge_cmap,
+                            edge_threshold=edge_threshold,
+                            axes=ax_connection_connectome)
   
-  norm = Normalize(vmin=weights.min(), vmax=weights.max())
+    norm = Normalize(vmin=weights.min(), vmax=weights.max())
 
-  cb = colorbar.ColorbarBase(ax_connection_colorbar, cmap=cmap,
-                                  norm=norm,
-                                  orientation='vertical')
-  cb.set_label('Importance')
+    cb = colorbar.ColorbarBase(ax_connection_colorbar, cmap=cmap,
+                                    norm=norm,
+                                    orientation='vertical')
+    cb.set_label('Importance')
 
   # Count the occurrence of each ROI
   roi_counts = np.zeros(len(labels))
@@ -602,7 +606,7 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
       if count_in_rois >= 1:
         weight = max(possible_weights)
 
-      roi_importances.append((top_counts[i] + 1)*weight)      
+      roi_importances.append((top_counts[i]+1)*weight)      
     else:
       roi_importances.append(0.0001)
   
@@ -613,26 +617,27 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
 
   normalized_colors = cmap((roi_importances - roi_importances.min()) / (roi_importances.max() - roi_importances.min()))
 
-  plotting.plot_connectome(adjacency_matrix, coordinates,
-                         node_color=normalized_colors,
-                         node_size=normalized_sizes,
-                         display_mode='ortho',
-                         colorbar=False,
-                         axes=ax_roi_connectome)
+  if print_graph:
+    plotting.plot_connectome(adjacency_matrix, coordinates,
+                          node_color=normalized_colors,
+                          node_size=normalized_sizes,
+                          display_mode='ortho',
+                          colorbar=False,
+                          axes=ax_roi_connectome)
 
-  norm = Normalize(vmin=roi_importances.min(), vmax=roi_importances.max())
+    norm = Normalize(vmin=roi_importances.min(), vmax=roi_importances.max())
 
-  cb = colorbar.ColorbarBase(ax_roi_colorbar, cmap=cmap,
-                                  norm=norm,
-                                  orientation='vertical')
-  cb.set_label('Importance')
+    cb = colorbar.ColorbarBase(ax_roi_colorbar, cmap=cmap,
+                                    norm=norm,
+                                    orientation='vertical')
+    cb.set_label('Importance')
 
-  if save:
-    filename = f"plots/{pipeline}/{pipeline}_plot_{method}_{num_connections}_connections.png"
-    plt.savefig(filename)
+    if save:
+      filename = f"plots/{pipeline}/{pipeline}_plot_{method}_{num_connections}_connections.png"
+      plt.savefig(filename)
 
-  if show_now:
-    plt.show()
+    if show_now:
+      plt.show()
 
   # Open the JSON file for reading
   with open('aal_roi_functions.json', 'r') as file:
@@ -640,13 +645,22 @@ def print_connections(rois, weights, method, pipeline, show_now=False, save=Fals
     ROI_functions = json.load(file)
 
   labels = np.array(atlas.labels)
-  top_connections = labels[rois[:100]]
+  top_connections = labels[rois[:top_regions_df]]
   connections_with_weights = np.array([(connection[0], ROI_functions[connection[0]], connection[1], ROI_functions[connection[1]], np.round(weight, 2)) for connection, weight in zip(top_connections, weights)])
 
   # Convert the top connections to a DataFrame for nice formatting
   top_connections_df = pd.DataFrame(connections_with_weights, columns=['ROI 1', 'ROI 1 function', 'ROI 2', 'ROI 2 function', 'Importance'])
 
-  return top_connections_df
+  important_rois = np.argsort(roi_importances)[::-1]
+  important_rois_weights = roi_importances[important_rois]
+  
+  important_rois_weights = 10 * ((important_rois_weights - important_rois_weights.min()) / (important_rois_weights.max() - important_rois_weights.min()))
+
+  important_rois_with_weights = np.array([(labels[roi], ROI_functions[labels[roi]], np.round(weight, 2)) for roi, weight in zip(important_rois, important_rois_weights)])
+
+  top_rois_df = pd.DataFrame(important_rois_with_weights[:top_regions_df], columns=['ROI', 'Function', 'Importance'])
+
+  return top_connections_df, top_rois_df
 
 def model_predict_lime(data):
   # Convert data to tensor, pass through model, and return softmax probabilities
@@ -1113,7 +1127,11 @@ def compare_models_in_different_pipelines():
 
 def overlap_coefficient(set_a, set_b):
     # Calculate the intersection and the sizes of the sets
-    intersection = len(set(set_a) & set(set_b))
+    # intersection = len(get_relaxed_overlap(set_a, set_b))
+    set_a = set(set_a)
+    set_b = set(set_b)
+
+    intersection = len(set_a.intersection(set_b))
     min_size = min(len(set_a), len(set_b))
     
     # Calculate the Overlap Coefficient
@@ -1122,13 +1140,11 @@ def overlap_coefficient(set_a, set_b):
 
 
 def calculate_similarity_metrics(connections_a, connections_b):
-
-  connections_a = [str(i[0]) + '-' + str(i[1]) for i in connections_a]
-  connections_b = [str(i[0]) + '-' + str(i[1]) for i in connections_b]
-
   overlap_coef = overlap_coefficient(connections_a, connections_b)
 
   # Convert connection lists to binary vectors
+  connections_a = set(connections_a)
+  connections_b = set(connections_b)
   all_connections = list(set(connections_a) | set(connections_b))
   vector_a = np.array([1 if conn in connections_a else 0 for conn in all_connections])
   vector_b = np.array([1 if conn in connections_b else 0 for conn in all_connections])
@@ -1142,24 +1158,60 @@ def calculate_similarity_metrics(connections_a, connections_b):
   return jaccard, cosine_sim, overlap_coef
 
 def calculate_spatial_overlap(connections1, connections2):
-    roi_set1 = set([roi for conn in connections1 for roi in conn])
-    roi_set2 = set([roi for conn in connections2 for roi in conn])
-    overlap = roi_set1.intersection(roi_set2)
-    overlap_fraction = len(overlap) / len(roi_set1.union(roi_set2))
+  roi_set1 = set(connections1)
+  roi_set2 = set(connections2)
+  overlap = roi_set1.intersection(roi_set2)
+  overlap_fraction = len(overlap) / len(roi_set1.union(roi_set2))
 
-    pdb.set_trace()
+  return overlap_fraction
 
-    return overlap_fraction
+def get_base_name(roi):
+  return roi.split('_')[0]
 
-def compare_pipelines(pipeline1, pipeline2):
+def get_relaxed_overlap(rois_1, rois_2, centroid_distance_threshold=0.5):
+  # base_rois_1 = {get_base_name(roi) for roi in rois_1}
+  # base_rois_2 = {get_base_name(roi) for roi in rois_2}
+
+  # relaxed_overlap = base_rois_1.intersection(base_rois_2)
+
+  # # Find the original ROIs corresponding to the overlapping base names
+  # overlap = {roi for roi in rois_1 if get_base_name(roi) in relaxed_overlap} | {roi for roi in rois_2 if get_base_name(roi) in relaxed_overlap}
+
+  atlas = datasets.fetch_atlas_aal(version='SPM12')
+  labels = atlas.labels  # List of AAL region labels
+  label_indices = {label: index for index, label in enumerate(labels)}
+
+  # Get the indices of the selected ROIs
+  selected_indices = [label_indices[roi] for roi in rois_1 if roi in label_indices]
+  selected_labels = [labels[index] for index in selected_indices]
+
+  # Get the coordinates of the ROIs
+  coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08) 
+  filtered_coordinates = [coordinates[index] for index in selected_indices]
+
+  overlap = []
+
+  return overlap
+
+def compare_pipelines(pipeline1, pipeline2, strict=True):
 
   data, labels_from_abide_1 = get_data_from_abide(pipeline1)
   data, labels_from_abide_2 = get_data_from_abide(pipeline2)
 
-  rois_1, weights_1, indices_1 = get_top_rois(pipeline1, labels_from_abide_1)
-  rois_2, weights_2, indices_2 = get_top_rois(pipeline2, labels_from_abide_2)
+  rois_1 = get_top_rois(pipeline1, labels_from_abide_1)['ROI']
+  rois_2 = get_top_rois(pipeline2, labels_from_abide_2)['ROI']
 
-  spatial_overlap = calculate_spatial_overlap(rois_1[:50], rois_2[:50])
+  print(f"Top ROIs for {pipeline1}: {set(rois_1)}")
+  print(f"Top ROIs for {pipeline2}: {set(rois_2)}")
+ 
+  spatial_overlap = calculate_spatial_overlap(rois_1, rois_2)
+
+  if strict:
+    overlap = set(rois_1).intersection(set(rois_2))
+  else:
+    overlap = get_relaxed_overlap(rois_1, rois_2)
+
+  print(f"Relaxed Overlap between {pipeline1} and {pipeline2}: {overlap}")
 
   jaccard, cosine_sim, overlap_coef = calculate_similarity_metrics(rois_1, rois_2)
 
@@ -1169,6 +1221,8 @@ def compare_pipelines(pipeline1, pipeline2):
   print(f"Overlap Coefficient: {overlap_coef}")
   print(f"Spatial Overlap: {spatial_overlap}")
 
+  return overlap
+
 def get_top_rois(pipeline, labels_from_abide, RFE_step=20, N_rois=1000):
   top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
   top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
@@ -1177,7 +1231,92 @@ def get_top_rois(pipeline, labels_from_abide, RFE_step=20, N_rois=1000):
 
   rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
-  return rois_ig, weights_ig, indices_ig
+  connections, rois = print_connections(rois_ig, weights_ig, "Integrated Gradients", pipeline, top_regions=100, top_regions_df=10, show_now=False, save=False, print_graph=False)
+
+  return rois
+
+
+def print_rois(rois):
+  # Fetch the AAL atlas
+  atlas = datasets.fetch_atlas_aal(version='SPM12')
+  labels = atlas.labels  # List of AAL region labels
+  label_indices = {label: index for index, label in enumerate(labels)}
+
+  # Get the indices of the selected ROIs
+  selected_indices = [label_indices[roi] for roi in rois if roi in label_indices]
+  selected_labels = [labels[index] for index in selected_indices]
+
+  # Get the coordinates of the ROIs
+  coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08) 
+  filtered_coordinates = [coordinates[index] for index in selected_indices]
+
+  # Create an empty adjacency matrix for all ROIs
+  full_adjacency_matrix = np.zeros((len(labels), len(labels)))
+
+  # Plot all nodes with a default color and size
+  fig, ax = plt.subplots(figsize=(10, 8))
+  plotting.plot_connectome(full_adjacency_matrix, coordinates,
+                            node_color='darkblue',
+                            node_size=25,
+                            display_mode='ortho',
+                            colorbar=False,
+                            title="Selected ROIs",
+                            axes=ax)
+
+  # Highlight selected nodes with a different color and size
+  selected_coordinates = [coordinates[index] for index in selected_indices]
+  selected_adjacency_matrix = np.zeros((len(selected_indices), len(selected_indices)))
+  plotting.plot_connectome(selected_adjacency_matrix, selected_coordinates,
+                            node_color='yellow',
+                            node_size=100,
+                            display_mode='ortho',
+                            colorbar=False,
+                            title="Selected ROIs",
+                            axes=ax)
+
+  # Overlay labels for the highlighted nodes
+  for coord, label in zip(selected_coordinates, selected_labels):
+      x, y, z = coord
+      ax.text(x, y, label, fontsize=9, ha='center', va='center', color='black', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
+
+  plt.show()
+
+def view_rois(rois):
+  # Fetch the AAL atlas
+  atlas = datasets.fetch_atlas_aal(version='SPM12')
+  labels = atlas.labels  # List of AAL region labels
+  label_indices = {label: index for index, label in enumerate(labels)}
+
+  # Filter to include only the requested ROIs
+  filtered_indices = [label_indices[roi] for roi in rois if roi in label_indices]
+  filtered_labels = [labels[index] for index in filtered_indices]
+
+  # Get the coordinates of the ROIs
+  coordinates = plotting.find_parcellation_cut_coords(atlas.maps)
+  filtered_coordinates = [coordinates[index] for index in filtered_indices]
+  
+  plotting_params = {
+    'marker_color': [],
+    'marker_size': [],
+    'marker_labels': [],
+    'coordinates': coordinates
+  }
+
+  for idx, coord in enumerate(coordinates):
+    if np.any(filtered_coordinates == coord):
+      plotting_params['marker_color'].append('yellow')
+      plotting_params['marker_size'].append(25)
+      plotting_params['marker_labels'].append(labels[idx])
+    else:
+      plotting_params['marker_color'].append('darkblue')
+      plotting_params['marker_size'].append(10)
+      plotting_params['marker_labels'].append('')
+
+  # Plot all coordinates with view_markers
+  all_markers = plotting.view_markers(plotting_params['coordinates'], marker_labels=plotting_params['marker_labels'], marker_color=plotting_params['marker_color'], marker_size=plotting_params['marker_size'])
+
+  # Show both plots in the browser
+  all_markers.open_in_browser()
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Process control flags.')
@@ -1213,9 +1352,22 @@ if __name__ == "__main__":
   if use_cuda:
       torch.cuda.manual_seed_all(seed)
 
-  # compare_pipelines('ccs', 'dparsf')
+  # ccs_dparsf = compare_pipelines('ccs', 'dparsf')
+  # ccs_cpac = compare_pipelines('cpac', 'ccs')
+  # cpac_dparsf = compare_pipelines('cpac', 'dparsf')
 
-  pipeline = 'niak'
+  # overlap = ccs_dparsf.intersection(ccs_cpac)
+  # overlap = overlap.intersection(cpac_dparsf)
+
+  # # overlap = get_relaxed_overlap(ccs_dparsf, ccs_cpac)
+  # # overlap = get_relaxed_overlap(overlap, cpac_dparsf)
+
+  # print(f"Common ROIs between all pipelines: {overlap}")
+
+  # view_rois(list(overlap))
+
+  pipeline='ccs'
+
 
   data, labels_from_abide = get_data_from_abide(pipeline)
 
@@ -1251,20 +1403,25 @@ if __name__ == "__main__":
   rois_guidedbackprop, weights_guidedbackprop, indices_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
 
   interpretation_results = [
-    (rois_ig[:N_rois_to_display], indices_ig, weights_ig[:N_rois_to_display], "Integrated Gradients"),
-    (rois_shap[:N_rois_to_display], indices_shap, weights_shap[:N_rois_to_display], "SHAP"),
-    (rois_lime[:N_rois_to_display], indices_lime, weights_lime[:N_rois_to_display], "LIME"),
-    (rois_guidedbackprop[:N_rois_to_display], indices_guidedbackprop, weights_guidedbackprop[:N_rois_to_display], "GuidedBackprop"),
+    (rois_ig, indices_ig, weights_ig, "Integrated Gradients"),
+    (rois_shap, indices_shap, weights_shap, "SHAP"),
+    (rois_lime, indices_lime, weights_lime, "LIME"),
+    (rois_guidedbackprop, indices_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
 
-    (rois_deeplift[:N_rois_to_display], indices_deeplift, weights_deeplift[:N_rois_to_display], "DeepLift"),
-    (rois_deepliftshap[:N_rois_to_display], indices_deepliftshap, weights_deepliftshap[:N_rois_to_display], "DeepLiftShap"),
-    (rois_gradientshap[:N_rois_to_display], indices_gradientshap, weights_gradientshap[:N_rois_to_display], "GradientShap"),
+    (rois_deeplift, indices_deeplift, weights_deeplift, "DeepLift"),
+    (rois_deepliftshap, indices_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
+    (rois_gradientshap, indices_gradientshap, weights_gradientshap, "GradientShap"),
   ]
 
   if interpretation_methods:
     for i in interpretation_results:
       print("=" * 115,f'\n{i[3]}\n' + ('=' * 115))
-      print(print_connections(i[0], i[2], i[3], pipeline).to_string(index=False))
+      connections, rois = print_connections(i[0], i[2], i[3], pipeline, show_now=False, save=False, print_graph=False)
+      print("\n Top Connections \n")
+      print(connections.to_string(index=False))
+
+      print("\n Top ROIs \n")
+      print(rois.to_string(index=False))
 
     plt.show()
 
