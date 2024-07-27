@@ -32,8 +32,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
-def get_data_from_abide(pipeline):
-  downloads = f'abide/downloads/Outputs/{pipeline}/filt_global/rois_aal/'
+def get_data_from_abide(pipeline, atlas):
+  downloads = f'abide/downloads/bad/Outputs/{pipeline}/filt_global/rois_{atlas}/'
   pheno_file = 'data/Phenotypic_V1_0b_preprocessed1.csv'
 
   pheno_file = open(pheno_file, 'r')
@@ -731,9 +731,13 @@ def train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=Fals
     test_dataloader = DataLoader(test_set, **test_params)
     val_dataloader = DataLoader(val_set, **val_params)
 
-    AE1 = Autoencoder(1000, 500).to(device)
-    AE2 = Autoencoder(500, 100).to(device)
-    classifier = SoftmaxClassifier(100, 2).to(device)
+    input_size = top_features.shape[1]
+    hidden_size = input_size // 2
+    classifier_size = hidden_size // 5
+
+    AE1 = Autoencoder(input_size, hidden_size).to(device)
+    AE2 = Autoencoder(hidden_size, classifier_size).to(device)
+    classifier = SoftmaxClassifier(classifier_size, 2).to(device)
     model = StackedAutoencoder(AE1, AE2, classifier).to(device)
 
     if (train_model):
@@ -1088,43 +1092,6 @@ def replace_features_with_0(data, feature_indices_to_remove):
 
   return data
 
-def compare_models_in_different_pipelines():
-  pipelines = ['cpac', 'dparsf', 'niak', 'ccs']
-
-  top_connections = []
-
-  for pipeline in pipelines:
-    data, labels = get_data_from_abide(pipeline)
-    labels_from_abide = np.array(labels)
-    
-    #Convert labels from 1, 2 to 0, 1 for PyTorch compatibility
-    labels_from_abide = labels_from_abide - 1
-    top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step1.csv', delimiter=',')
-    top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step1.csv', delimiter=',')
-
-    model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=False, train_model=False, save_model=False)
-
-    N_rois = 1000
-    N_rois_to_compare = 50
-
-    rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
-
-    top_conns = print_connections(rois_ig, weights_ig, "Integrated Gradients", pipeline)
-    
-    top_connections.append(top_conns[['ROI 1','ROI 2']])
-
-
-
-  common_pairs = reduce(lambda left, right: pd.merge(left, right, on=['ROI 1', 'ROI 2']), top_connections)
-
-  all_data = pd.concat(top_connections)
-  roi_counts = pd.concat([all_data['ROI 1'], all_data['ROI 2']]).value_counts()
-
-
-  pdb.set_trace()
-
-  return top_connections
-
 def overlap_coefficient(set_a, set_b):
     # Calculate the intersection and the sizes of the sets
     # intersection = len(get_relaxed_overlap(set_a, set_b))
@@ -1193,13 +1160,20 @@ def get_relaxed_overlap(rois_1, rois_2, centroid_distance_threshold=0.5):
 
   return overlap
 
-def compare_pipelines(pipeline1, pipeline2, strict=True):
+def compare_pipelines(pipeline1, pipeline2, atlas='aal', strict=True):
 
-  data, labels_from_abide_1 = get_data_from_abide(pipeline1)
-  data, labels_from_abide_2 = get_data_from_abide(pipeline2)
+  data, labels_from_abide_1 = get_data_from_abide(pipeline1, atlas)
+  data, labels_from_abide_2 = get_data_from_abide(pipeline2, atlas)
 
-  rois_1 = get_top_rois(pipeline1, labels_from_abide_1)['ROI']
-  rois_2 = get_top_rois(pipeline2, labels_from_abide_2)['ROI']
+  rois_1 = get_top_rois(pipeline1, atlas, labels_from_abide_1)['ROI']
+  rois_2 = get_top_rois(pipeline2, atlas, labels_from_abide_2)['ROI']
+
+  atlas = datasets.fetch_atlas_aal()
+  labels = atlas.labels()
+
+  coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08)
+
+  pdb.set_trace()
 
   print(f"Top ROIs for {pipeline1}: {set(rois_1)}")
   print(f"Top ROIs for {pipeline2}: {set(rois_2)}")
@@ -1223,9 +1197,9 @@ def compare_pipelines(pipeline1, pipeline2, strict=True):
 
   return overlap
 
-def get_top_rois(pipeline, labels_from_abide, RFE_step=20, N_rois=1000):
-  top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
-  top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
+def get_top_rois(pipeline, atlas, labels_from_abide, RFE_step=20, N_rois=1000):
+  top_features = np.loadtxt(f'data/{pipeline}/rois_{atlas}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
+  top_rois = np.loadtxt(f'data/{pipeline}/rois_{atlas}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
 
   model, _, _, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=False, train_model=False, save_model=False, rfe_step=RFE_step)
 
@@ -1367,26 +1341,32 @@ if __name__ == "__main__":
   # view_rois(list(overlap))
 
   pipeline='ccs'
+  atlas='aal'
+
+  with open(f'data/atlas_params.json') as f:
+    params = json.load(f)
+
+  params = params[atlas]
 
 
-  data, labels_from_abide = get_data_from_abide(pipeline)
+  data, labels_from_abide = get_data_from_abide(pipeline, atlas)
 
-  RFE_step = 20
+  RFE_step = params['rfe_step']
 
-  # feature_vecs, feature_vec_indices = get_feature_vecs(data)
+  feature_vecs, feature_vec_indices = get_feature_vecs(data)
 
-  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, RFE_step)
+  top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, list(labels_from_abide), feature_vec_indices, params['input_neurons'], RFE_step)
 
-  # np.savetxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', top_features, delimiter=",")
-  # np.savetxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', top_rois, delimiter=",")
+  np.savetxt(f'data/bad/{pipeline}/rois_{atlas}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', top_features, delimiter=",")
+  np.savetxt(f'data/bad/{pipeline}/rois_{atlas}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', top_rois, delimiter=",")
   
-  top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
-  top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
+  # top_features = np.loadtxt(f'data/bad/{pipeline}/rois_{atlas}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
+  # top_rois = np.loadtxt(f'data/bad/{pipeline}/rois_{atlas}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
 
   model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=verbose, train_model=train_model, save_model=save_model, rfe_step=RFE_step)
 
-  N_rois = 1000
-  N_rois_to_display = 50
+  N_rois = params['input_neurons']
+  N_rois_to_display = N_rois // 20
 
   rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
@@ -1416,7 +1396,8 @@ if __name__ == "__main__":
   if interpretation_methods:
     for i in interpretation_results:
       print("=" * 115,f'\n{i[3]}\n' + ('=' * 115))
-      connections, rois = print_connections(i[0], i[2], i[3], pipeline, show_now=False, save=False, print_graph=False)
+
+      connections, rois = print_connections(i[0], i[2], i[3], pipeline, top_regions=N_rois_to_display, show_now=True, save=False, print_graph=True)
       print("\n Top Connections \n")
       print(connections.to_string(index=False))
 

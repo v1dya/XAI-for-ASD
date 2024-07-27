@@ -1,0 +1,18 @@
+{
+  "aal": {
+    "input_neurons": 1000,
+    "rfe_step": 20
+  },
+  "tt": {
+    "input_neurons": 900,
+    "rfe_step": 18
+  },
+  "dosenbach160": {
+    "input_neurons": 2000,
+    "rfe_step": 40
+  },
+  "cc200": {
+    "input_neurons": 3000,
+    "rfe_step": 60
+  }
+}
