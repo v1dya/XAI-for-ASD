@@ -511,7 +511,7 @@ def expand_relative_coords(coordinates, percent):
   return spread_coordinates
 
 
-def print_connections(rois, weights, method, pipeline, top_regions=50, top_regions_df=10, show_now=False, save=False, print_graph=True):
+def print_connections(rois, weights, method, pipeline, top_regions=50, top_regions_df=10, save=False, print_graph=True):
   atlas = datasets.fetch_atlas_aal(version='SPM12')
   labels = atlas.labels  # List of AAL region labels
   weights = np.array(weights)
@@ -636,8 +636,7 @@ def print_connections(rois, weights, method, pipeline, top_regions=50, top_regio
       filename = f"plots/{pipeline}/{pipeline}_plot_{method}_{num_connections}_connections.png"
       plt.savefig(filename)
 
-    if show_now:
-      plt.show()
+    plt.show()
 
   # Open the JSON file for reading
   with open('aal_roi_functions.json', 'r') as file:
@@ -1168,28 +1167,38 @@ def calculate_spatial_overlap(connections1, connections2):
 def get_base_name(roi):
   return roi.split('_')[0]
 
-def get_relaxed_overlap(rois_1, rois_2, centroid_distance_threshold=0.5):
-  # base_rois_1 = {get_base_name(roi) for roi in rois_1}
-  # base_rois_2 = {get_base_name(roi) for roi in rois_2}
-
-  # relaxed_overlap = base_rois_1.intersection(base_rois_2)
-
-  # # Find the original ROIs corresponding to the overlapping base names
-  # overlap = {roi for roi in rois_1 if get_base_name(roi) in relaxed_overlap} | {roi for roi in rois_2 if get_base_name(roi) in relaxed_overlap}
-
+def get_relaxed_overlap(rois_1, rois_2, centroid_distance_threshold=20):
   atlas = datasets.fetch_atlas_aal(version='SPM12')
-  labels = atlas.labels  # List of AAL region labels
+  labels = atlas.labels
   label_indices = {label: index for index, label in enumerate(labels)}
+  
+  # coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08)
+  coordinates = plotting.find_parcellation_cut_coords(atlas.maps)
+  
+  overlap = set()
+  
+  for roi1 in rois_1:
+    if roi1 in rois_2:
+      overlap.add(roi1)
+      continue
+      
+    for roi2 in rois_2:
+      if roi1 == roi2:
+        print("Same ROI", roi1)
+        overlap.add(roi1)
+        break
 
-  # Get the indices of the selected ROIs
-  selected_indices = [label_indices[roi] for roi in rois_1 if roi in label_indices]
-  selected_labels = [labels[index] for index in selected_indices]
-
-  # Get the coordinates of the ROIs
-  coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08) 
-  filtered_coordinates = [coordinates[index] for index in selected_indices]
-
-  overlap = []
+      # Check for spatial proximity
+      if roi1 in label_indices and roi2 in label_indices:
+        coord1 = coordinates[label_indices[roi1]]
+        coord2 = coordinates[label_indices[roi2]]
+        distance = np.linalg.norm(np.array(coord1) - np.array(coord2))
+        
+        if distance < centroid_distance_threshold:
+          overlap.add(roi1)
+          print("Distance between", roi1, "and", roi2, "is", distance)
+          print("Coords are :", coord1, coord2)
+          break
 
   return overlap
 
@@ -1209,7 +1218,10 @@ def compare_pipelines(pipeline1, pipeline2, strict=True):
   if strict:
     overlap = set(rois_1).intersection(set(rois_2))
   else:
-    overlap = get_relaxed_overlap(rois_1, rois_2)
+    overlap_1_to_2 = get_relaxed_overlap(rois_1, rois_2)
+    overlap_2_to_1 = get_relaxed_overlap(rois_2, rois_1)
+    overlap = overlap_1_to_2.union(overlap_2_to_1)
+
 
   print(f"Relaxed Overlap between {pipeline1} and {pipeline2}: {overlap}")
 
@@ -1231,7 +1243,7 @@ def get_top_rois(pipeline, labels_from_abide, RFE_step=20, N_rois=1000):
 
   rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
-  connections, rois = print_connections(rois_ig, weights_ig, "Integrated Gradients", pipeline, top_regions=100, top_regions_df=10, show_now=False, save=False, print_graph=False)
+  connections, rois = print_connections(rois_ig, weights_ig, "Integrated Gradients", pipeline, top_regions=100, top_regions_df=20, save=False, print_graph=False)
 
   return rois
 
@@ -1318,6 +1330,72 @@ def view_rois(rois):
   # Show both plots in the browser
   all_markers.open_in_browser()
 
+def print_overlapping_rois(overlapping_rois, method, pipelines, show_now=True, save=False):
+  atlas = datasets.fetch_atlas_aal(version='SPM12')
+  labels = atlas.labels  # List of AAL region labels
+  label_indices = {label: index for index, label in enumerate(labels)}
+
+  # coordinates = expand_relative_coords(plotting.find_parcellation_cut_coords(atlas.maps), 1.08)
+  coordinates = plotting.find_parcellation_cut_coords(atlas.maps)
+
+  # Create a figure
+  fig = plt.figure(figsize=(15, 8))
+  ax_roi_connectome = fig.add_axes([0.05, 0.05, 0.9, 0.9])
+
+  # Set the figure-wide title
+  fig.suptitle(f'Overlapping ROIs between {pipelines[0]} and {pipelines[1]} using {method}', fontsize=16)
+
+  # Create an empty adjacency matrix
+  adjacency_matrix = np.zeros((len(coordinates), len(coordinates)))
+
+  # Assign importance to overlapping ROIs
+  roi_importances = np.zeros(len(labels))
+  for roi in overlapping_rois:
+    if roi in label_indices:
+      roi_importances[label_indices[roi]] = 1.0
+
+  # Normalize the importance scores for node sizes and colors
+  normalized_sizes = 20 + (roi_importances - roi_importances.min()) / (roi_importances.max() - roi_importances.min()) * 180
+
+  # Use a colormap to assign colors
+  cmap = colormaps['viridis']
+  normalized_colors = cmap((roi_importances - roi_importances.min()) / (roi_importances.max() - roi_importances.min()))
+
+  # Plot the connectome
+  plotting.plot_connectome(adjacency_matrix, coordinates,
+                            node_color=normalized_colors,
+                            node_size=normalized_sizes,
+                            display_mode='ortho',
+                            colorbar=False,
+                            axes=ax_roi_connectome)
+
+  # Add a colorbar
+  # sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=1))
+  # sm.set_array([])
+  # cbar = plt.colorbar(sm, ax=ax_roi_connectome, label='Importance', shrink=0.8)
+
+  # Add ROI labels
+  for roi in overlapping_rois:
+    if roi in label_indices:
+      idx = label_indices[roi]
+      x, y, z = coordinates[idx]
+      ax_roi_connectome.text(x, y, roi, fontsize=8, ha='center', va='center', 
+                              bbox=dict(facecolor='white', edgecolor='none', alpha=0.7))
+
+  if save:
+    filename = f"plots/overlapping_rois_{pipelines[0]}_{pipelines[1]}_{method}.png"
+    plt.savefig(filename)
+
+  if show_now:
+    plt.show()
+  
+  # Print out the list of overlapping ROIs
+  print(f"\nOverlapping ROIs between {pipelines[0]} and {pipelines[1]}:")
+  for roi in sorted(overlapping_rois):
+    print(roi)
+
+  return fig
+
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Process control flags.')
   parser.add_argument('--verbose', type=lambda x: (str(x).lower() == 'true'), default=False, help='Verbose output')
@@ -1352,7 +1430,22 @@ if __name__ == "__main__":
   if use_cuda:
       torch.cuda.manual_seed_all(seed)
 
-  # ccs_dparsf = compare_pipelines('ccs', 'dparsf')
+  ccs_dparsf = compare_pipelines('ccs', 'dparsf', strict=False)
+  print_overlapping_rois(ccs_dparsf, "Integrated Gradients", ['ccs', 'dparsf'], show_now=True, save=False)
+
+  cpac_dparsf = compare_pipelines('cpac', 'dparsf', strict=False)
+  print_overlapping_rois(cpac_dparsf, "Integrated Gradients", ['cpac', 'dparsf'], show_now=True, save=False)
+  
+  cpac_ccs = compare_pipelines('cpac', 'ccs', strict=False)
+  print_overlapping_rois(cpac_ccs, "Integrated Gradients", ['ccs', 'cpac'], show_now=True, save=False)
+
+  overlap = get_relaxed_overlap(ccs_dparsf, cpac_dparsf)
+  overlap = get_relaxed_overlap(overlap, cpac_ccs)
+  print_overlapping_rois(overlap, "Integrated Gradients", ['All', 'All'], show_now=True, save=False)
+
+  pdb.set_trace()
+
+  # 
   # ccs_cpac = compare_pipelines('cpac', 'ccs')
   # cpac_dparsf = compare_pipelines('cpac', 'dparsf')
 
@@ -1366,93 +1459,91 @@ if __name__ == "__main__":
 
   # view_rois(list(overlap))
 
-  pipeline='ccs'
+  # pipeline='ccs'
 
 
-  data, labels_from_abide = get_data_from_abide(pipeline)
+  # data, labels_from_abide = get_data_from_abide(pipeline)
 
-  RFE_step = 20
+  # RFE_step = 20
 
-  # feature_vecs, feature_vec_indices = get_feature_vecs(data)
+  # # feature_vecs, feature_vec_indices = get_feature_vecs(data)
 
-  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, RFE_step)
+  # # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, RFE_step)
 
-  # np.savetxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', top_features, delimiter=",")
-  # np.savetxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', top_rois, delimiter=",")
+  # # np.savetxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', top_features, delimiter=",")
+  # # np.savetxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', top_rois, delimiter=",")
   
-  top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
-  top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
+  # top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
+  # top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
 
-  model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=verbose, train_model=train_model, save_model=save_model, rfe_step=RFE_step)
+  # model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=verbose, train_model=train_model, save_model=save_model, rfe_step=RFE_step)
 
-  N_rois = 1000
-  N_rois_to_display = 50
+  # N_rois = 1000
+  # N_rois_to_display = 50
 
-  rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
+  # rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
-  rois_shap, weights_shap, indices_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
+  # rois_shap, weights_shap, indices_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
 
-  rois_lime, weights_lime, indices_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
+  # rois_lime, weights_lime, indices_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
 
-  rois_deeplift, weights_deeplift, indices_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
+  # rois_deeplift, weights_deeplift, indices_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
 
-  rois_deepliftshap, weights_deepliftshap, indices_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
+  # rois_deepliftshap, weights_deepliftshap, indices_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
 
-  rois_gradientshap, weights_gradientshap, indices_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
+  # rois_gradientshap, weights_gradientshap, indices_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
 
-  rois_guidedbackprop, weights_guidedbackprop, indices_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
+  # rois_guidedbackprop, weights_guidedbackprop, indices_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
 
-  interpretation_results = [
-    (rois_ig, indices_ig, weights_ig, "Integrated Gradients"),
-    (rois_shap, indices_shap, weights_shap, "SHAP"),
-    (rois_lime, indices_lime, weights_lime, "LIME"),
-    (rois_guidedbackprop, indices_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
+  # interpretation_results = [
+  #   (rois_ig, indices_ig, weights_ig, "Integrated Gradients"),
+  #   (rois_shap, indices_shap, weights_shap, "SHAP"),
+  #   (rois_lime, indices_lime, weights_lime, "LIME"),
+  #   (rois_guidedbackprop, indices_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
 
-    (rois_deeplift, indices_deeplift, weights_deeplift, "DeepLift"),
-    (rois_deepliftshap, indices_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
-    (rois_gradientshap, indices_gradientshap, weights_gradientshap, "GradientShap"),
-  ]
+  #   (rois_deeplift, indices_deeplift, weights_deeplift, "DeepLift"),
+  #   (rois_deepliftshap, indices_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
+  #   (rois_gradientshap, indices_gradientshap, weights_gradientshap, "GradientShap"),
+  # ]
 
-  if interpretation_methods:
-    for i in interpretation_results:
-      print("=" * 115,f'\n{i[3]}\n' + ('=' * 115))
-      connections, rois = print_connections(i[0], i[2], i[3], pipeline, show_now=False, save=False, print_graph=False)
-      print("\n Top Connections \n")
-      print(connections.to_string(index=False))
+  # if interpretation_methods:
+  #   for i in interpretation_results:
+  #     print("=" * 115,f'\n{i[3]}\n' + ('=' * 115))
+  #     connections, rois = print_connections(i[0], i[2], i[3], pipeline, save=False, print_graph=True)
+  #     print("\n Top Connections \n")
+  #     print(connections.to_string(index=False))
 
-      print("\n Top ROIs \n")
-      print(rois.to_string(index=False))
+  #     print("\n Top ROIs \n")
+  #     print(rois.to_string(index=False))
 
-    plt.show()
+  # percentiles = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
 
-  percentiles = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+  # if(analyze_methods):
+  #   accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
 
-  if(analyze_methods):
-    accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
+  #   with open(f'roar_accuracies_{pipeline}.json', 'w') as f:
+  #     json.dump(accuracies, f)
+  # else:
+  #   with open(f'roar_accuracies_{pipeline}.json') as f:
+  #     accuracies = json.load(f)
 
-    with open(f'roar_accuracies_{pipeline}.json', 'w') as f:
-      json.dump(accuracies, f)
-  else:
-    with open(f'roar_accuracies_{pipeline}.json') as f:
-      accuracies = json.load(f)
+  # methods = list(accuracies.keys())
+  # accuracies = list(accuracies.values())
 
-  methods = list(accuracies.keys())
-  accuracies = list(accuracies.values())
+  # percentiles = [0] + [i*100 for i in percentiles]
 
-  percentiles = [0] + [i*100 for i in percentiles]
+  # for method, accuracy in zip(methods,accuracies):
+  #   accuracy = [base_accuracy] + accuracy
+  #   method_accuracies = [i*100 for i in accuracy]
+  #   plt.plot(percentiles, method_accuracies, label=method)
 
-  for method, accuracy in zip(methods,accuracies):
-    accuracy = [base_accuracy] + accuracy
-    method_accuracies = [i*100 for i in accuracy]
-    plt.plot(percentiles, method_accuracies, label=method)
+  # plt.legend()
 
-  plt.legend()
+  # plt.title('ROAR')
+  # plt.xlabel('Percent of features removed')
+  # plt.xticks(percentiles)
+  # plt.ylabel('Accuracy')
 
-  plt.title('ROAR')
-  plt.xlabel('Percent of features removed')
-  plt.xticks(percentiles)
-  plt.ylabel('Accuracy')
+  # plt.show()
 
-  plt.show()
-
-  print("Seed is",seed)
+  # print("Seed is",seed)
