@@ -1430,120 +1430,104 @@ if __name__ == "__main__":
   if use_cuda:
       torch.cuda.manual_seed_all(seed)
 
-  ccs_dparsf = compare_pipelines('ccs', 'dparsf', strict=False)
-  print_overlapping_rois(ccs_dparsf, "Integrated Gradients", ['ccs', 'dparsf'], show_now=True, save=False)
+  # ccs_dparsf = compare_pipelines('ccs', 'dparsf', strict=False)
+  # print_overlapping_rois(ccs_dparsf, "Integrated Gradients", ['ccs', 'dparsf'], show_now=True, save=False)
 
-  cpac_dparsf = compare_pipelines('cpac', 'dparsf', strict=False)
-  print_overlapping_rois(cpac_dparsf, "Integrated Gradients", ['cpac', 'dparsf'], show_now=True, save=False)
+  # cpac_dparsf = compare_pipelines('cpac', 'dparsf', strict=False)
+  # print_overlapping_rois(cpac_dparsf, "Integrated Gradients", ['cpac', 'dparsf'], show_now=True, save=False)
   
-  cpac_ccs = compare_pipelines('cpac', 'ccs', strict=False)
-  print_overlapping_rois(cpac_ccs, "Integrated Gradients", ['ccs', 'cpac'], show_now=True, save=False)
+  # cpac_ccs = compare_pipelines('cpac', 'ccs', strict=False)
+  # print_overlapping_rois(cpac_ccs, "Integrated Gradients", ['ccs', 'cpac'], show_now=True, save=False)
 
-  overlap = get_relaxed_overlap(ccs_dparsf, cpac_dparsf)
-  overlap = get_relaxed_overlap(overlap, cpac_ccs)
-  print_overlapping_rois(overlap, "Integrated Gradients", ['All', 'All'], show_now=True, save=False)
+  # overlap = get_relaxed_overlap(ccs_dparsf, cpac_dparsf)
+  # overlap = get_relaxed_overlap(overlap, cpac_ccs)
+  # print_overlapping_rois(overlap, "Integrated Gradients", ['All', 'All'], show_now=True, save=False)
 
-  pdb.set_trace()
-
-  # 
-  # ccs_cpac = compare_pipelines('cpac', 'ccs')
-  # cpac_dparsf = compare_pipelines('cpac', 'dparsf')
-
-  # overlap = ccs_dparsf.intersection(ccs_cpac)
-  # overlap = overlap.intersection(cpac_dparsf)
-
-  # # overlap = get_relaxed_overlap(ccs_dparsf, ccs_cpac)
-  # # overlap = get_relaxed_overlap(overlap, cpac_dparsf)
-
-  # print(f"Common ROIs between all pipelines: {overlap}")
-
-  # view_rois(list(overlap))
-
-  # pipeline='ccs'
+  pipeline='ccs'
 
 
-  # data, labels_from_abide = get_data_from_abide(pipeline)
+  data, labels_from_abide = get_data_from_abide(pipeline)
 
-  # RFE_step = 20
+  RFE_step = 20
 
-  # # feature_vecs, feature_vec_indices = get_feature_vecs(data)
+  # feature_vecs, feature_vec_indices = get_feature_vecs(data)
 
-  # # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, RFE_step)
+  # top_features, top_rois = get_top_features_from_SVM_RFE(feature_vecs, labels, feature_vec_indices, 1000, RFE_step)
 
-  # # np.savetxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', top_features, delimiter=",")
-  # # np.savetxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', top_rois, delimiter=",")
+  # np.savetxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', top_features, delimiter=",")
+  # np.savetxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', top_rois, delimiter=",")
   
-  # top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
-  # top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
+  top_features = np.loadtxt(f'data/{pipeline}/sorted_top_features_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
+  top_rois = np.loadtxt(f'data/{pipeline}/sorted_top_rois_{pipeline}_116_step{RFE_step}.csv', delimiter=',')
 
-  # model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=verbose, train_model=train_model, save_model=save_model, rfe_step=RFE_step)
+  model, base_accuracy, train_dataloader, test_dataloader = train_and_eval_model(top_features, labels_from_abide, pipeline, verbose=verbose, train_model=train_model, save_model=save_model, rfe_step=RFE_step)
 
-  # N_rois = 1000
-  # N_rois_to_display = 50
+  N_rois = 1000
+  N_rois_to_display = 50
 
-  # rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
+  rois_ig, weights_ig, indices_ig = find_top_rois_using_integrated_gradients(N_rois, model, test_dataloader, top_rois)
 
-  # rois_shap, weights_shap, indices_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
+  rois_shap, weights_shap, indices_shap = find_top_rois_using_SHAP(N_rois, model, test_dataloader, train_dataloader, top_rois)
 
-  # rois_lime, weights_lime, indices_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
+  rois_lime, weights_lime, indices_lime = find_top_rois_using_LIME(N_rois, model, test_dataloader, train_dataloader, top_rois)
 
-  # rois_deeplift, weights_deeplift, indices_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
+  rois_deeplift, weights_deeplift, indices_deeplift = find_top_rois_using_DeepLift(N_rois, model, test_dataloader, top_rois)
 
-  # rois_deepliftshap, weights_deepliftshap, indices_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
+  rois_deepliftshap, weights_deepliftshap, indices_deepliftshap = find_top_rois_using_DeepLiftShap(N_rois, model, test_dataloader, top_rois)
 
-  # rois_gradientshap, weights_gradientshap, indices_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
+  rois_gradientshap, weights_gradientshap, indices_gradientshap = find_top_rois_using_GradientShap(N_rois, model, test_dataloader, top_rois)
 
-  # rois_guidedbackprop, weights_guidedbackprop, indices_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
+  rois_guidedbackprop, weights_guidedbackprop, indices_guidedbackprop = find_top_rois_using_GuidedBackprop(N_rois, model, test_dataloader, top_rois)
 
-  # interpretation_results = [
-  #   (rois_ig, indices_ig, weights_ig, "Integrated Gradients"),
-  #   (rois_shap, indices_shap, weights_shap, "SHAP"),
-  #   (rois_lime, indices_lime, weights_lime, "LIME"),
-  #   (rois_guidedbackprop, indices_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
+  interpretation_results = [
+    (rois_ig, indices_ig, weights_ig, "Integrated Gradients"),
+    (rois_shap, indices_shap, weights_shap, "SHAP"),
+    (rois_lime, indices_lime, weights_lime, "LIME"),
+    (rois_guidedbackprop, indices_guidedbackprop, weights_guidedbackprop, "GuidedBackprop"),
 
-  #   (rois_deeplift, indices_deeplift, weights_deeplift, "DeepLift"),
-  #   (rois_deepliftshap, indices_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
-  #   (rois_gradientshap, indices_gradientshap, weights_gradientshap, "GradientShap"),
-  # ]
+    (rois_deeplift, indices_deeplift, weights_deeplift, "DeepLift"),
+    (rois_deepliftshap, indices_deepliftshap, weights_deepliftshap, "DeepLiftShap"),
+    (rois_gradientshap, indices_gradientshap, weights_gradientshap, "GradientShap"),
+  ]
 
-  # if interpretation_methods:
-  #   for i in interpretation_results:
-  #     print("=" * 115,f'\n{i[3]}\n' + ('=' * 115))
-  #     connections, rois = print_connections(i[0], i[2], i[3], pipeline, save=False, print_graph=True)
-  #     print("\n Top Connections \n")
-  #     print(connections.to_string(index=False))
+  if interpretation_methods:
+    for i in interpretation_results:
+      print("=" * 115,f'\n{i[3]}\n' + ('=' * 115))
+      connections, rois = print_connections(i[0], i[2], i[3], pipeline, save=False, print_graph=True)
+      print("\n Top Connections \n")
+      print(connections.to_string(index=False))
 
-  #     print("\n Top ROIs \n")
-  #     print(rois.to_string(index=False))
+      print("\n Top ROIs \n")
+      print(rois.to_string(index=False))
 
-  # percentiles = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
+  percentiles = [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
 
-  # if(analyze_methods):
-  #   accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
+  if(analyze_methods):
+    accuracies = roar(top_features, labels_from_abide, interpretation_results, percentiles)
 
-  #   with open(f'roar_accuracies_{pipeline}.json', 'w') as f:
-  #     json.dump(accuracies, f)
-  # else:
-  #   with open(f'roar_accuracies_{pipeline}.json') as f:
-  #     accuracies = json.load(f)
+    with open(f'roar_accuracies_{pipeline}.json', 'w') as f:
+      json.dump(accuracies, f)
+  else:
+    with open(f'roar_accuracies_{pipeline}.json') as f:
+      accuracies = json.load(f)
 
-  # methods = list(accuracies.keys())
-  # accuracies = list(accuracies.values())
+  methods = list(accuracies.keys())
+  accuracies = list(accuracies.values())
 
-  # percentiles = [0] + [i*100 for i in percentiles]
+  percentiles = [0] + [i*100 for i in percentiles]
 
-  # for method, accuracy in zip(methods,accuracies):
-  #   accuracy = [base_accuracy] + accuracy
-  #   method_accuracies = [i*100 for i in accuracy]
-  #   plt.plot(percentiles, method_accuracies, label=method)
+  for method, accuracy in zip(methods,accuracies):
+    accuracy = [base_accuracy] + accuracy
+    method_accuracies = [i*100 for i in accuracy]
+    plt.plot(percentiles, method_accuracies, label=method)
 
-  # plt.legend()
+  plt.legend()
 
-  # plt.title('ROAR')
-  # plt.xlabel('Percent of features removed')
-  # plt.xticks(percentiles)
-  # plt.ylabel('Accuracy')
+  plt.title('ROAR')
+  plt.xlabel('Percent of features removed')
+  plt.xticks(percentiles)
+  plt.ylabel('Accuracy')
 
-  # plt.show()
+  plt.show()
 
-  # print("Seed is",seed)
+  print("Seed is",seed)
